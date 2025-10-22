@@ -6,11 +6,13 @@ Nodes correspond to state polygons with ISO3166_2 abbreviations as IDs.
 Edges correspond to state boundary lines connecting adjacent states.
 """
 
+import sys
+import pickle
 from osgeo import ogr
 import networkx as nx
 
 
-def main():
+def create_graph():
     # Remote data sources
     polygons_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Polygons.shp"
     lines_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Lines.shp"
@@ -98,5 +100,22 @@ def main():
     return G
 
 
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python create-graph.py <output.pickle>")
+        sys.exit(1)
+
+    output_file = sys.argv[1]
+    graph = create_graph()
+
+    # Save graph to pickle file
+    print(f"\nSaving graph to {output_file}...")
+    with open(output_file, 'wb') as f:
+        pickle.dump(graph, f)
+
+    print(f"Graph saved successfully to {output_file}")
+    return graph
+
+
 if __name__ == "__main__":
-    graph = main()
+    main()
