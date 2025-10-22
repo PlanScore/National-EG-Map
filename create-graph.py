@@ -21,6 +21,17 @@ def create_graph():
     polygons_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Polygons.shp"
     lines_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Lines.shp"
 
+    # Congressional seats from 2020 apportionment
+    congressional_seats = {
+        'AL': 7, 'AK': 1, 'AZ': 9, 'AR': 4, 'CA': 52, 'CO': 8, 'CT': 5, 'DE': 1,
+        'FL': 28, 'GA': 14, 'HI': 2, 'ID': 2, 'IL': 17, 'IN': 9, 'IA': 4, 'KS': 4,
+        'KY': 6, 'LA': 6, 'ME': 2, 'MD': 8, 'MA': 9, 'MI': 13, 'MN': 8, 'MS': 4,
+        'MO': 8, 'MT': 2, 'NE': 3, 'NV': 4, 'NH': 2, 'NJ': 12, 'NM': 3, 'NY': 26,
+        'NC': 14, 'ND': 1, 'OH': 15, 'OK': 5, 'OR': 6, 'PA': 17, 'RI': 2, 'SC': 7,
+        'SD': 1, 'TN': 9, 'TX': 38, 'UT': 4, 'VT': 1, 'VA': 11, 'WA': 10, 'WV': 2,
+        'WI': 8, 'WY': 1
+    }
+
     # Create coordinate transformation to ESRI:102004 (Lambert Azimuthal Equal Area)
     target_srs = osr.SpatialReference()
     target_srs.ImportFromProj4('+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +a=6370997 +b=6370997 +units=m +no_defs')
@@ -70,8 +81,11 @@ def create_graph():
                 center_x = None
                 center_y = None
 
-            # Add node with reprojected WKT geometry and center coordinates
-            G.add_node(state_code, wkt=wkt, x=center_x, y=center_y)
+            # Get congressional seats for this state
+            seats = congressional_seats.get(state_code, 0)
+
+            # Add node with reprojected WKT geometry, center coordinates, and seats
+            G.add_node(state_code, wkt=wkt, x=center_x, y=center_y, seats=seats)
             node_count += 1
 
     print(f"Added {node_count} nodes")
@@ -157,10 +171,15 @@ def create_graph():
         wkt_len = len(first_edge[2].get('wkt', '')) if first_edge[2].get('wkt') else 0
         print(f"  Sample edge WKT length: {wkt_len} chars")
 
-    # Validate center coordinates
+    # Validate center coordinates and congressional seats
     nodes_with_centers = sum(1 for _, data in G.nodes(data=True)
                            if data.get('x') is not None and data.get('y') is not None)
+    nodes_with_seats = sum(1 for _, data in G.nodes(data=True)
+                          if data.get('seats') is not None and data.get('seats') > 0)
+    total_seats = sum(data.get('seats', 0) for _, data in G.nodes(data=True))
     print(f"  Nodes with center coordinates: {nodes_with_centers}/{G.number_of_nodes()}")
+    print(f"  Nodes with congressional seats: {nodes_with_seats}/{G.number_of_nodes()}")
+    print(f"  Total congressional seats: {total_seats}")
 
     return G
 

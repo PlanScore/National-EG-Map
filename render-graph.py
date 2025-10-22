@@ -86,12 +86,14 @@ def render_graph(graph_file, output_file):
         # Set plot limits based on patch extents
         ax.autoscale()
 
-    # Add state labels at center coordinates
+    # Add state labels with seat counts at center coordinates
     for state_code, data in G.nodes(data=True):
         x = data.get('x')
         y = data.get('y')
+        seats = data.get('seats', 0)
         if x is not None and y is not None:
-            ax.text(x, y, state_code, ha='center', va='center',
+            label = f"{state_code} ({seats})" if seats > 0 else state_code
+            ax.text(x, y, label, ha='center', va='center',
                    fontsize=10, fontweight='bold', color='black')
 
     # Save as SVG
