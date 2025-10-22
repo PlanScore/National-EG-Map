@@ -8,6 +8,7 @@ with dark grey borders on a transparent background.
 
 import sys
 import pickle
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.collections import PatchCollection
@@ -44,6 +45,103 @@ def parse_wkt_polygon(wkt):
     except Exception as e:
         print(f"Error parsing WKT: {e}")
         return []
+
+
+def calculate_label_bbox(text, fontsize=10):
+    """Estimate bounding box dimensions for a text label."""
+    # More accurate approximation for bold text
+    char_width = fontsize * 0.8  # pixels per character (bold text is wider)
+    char_height = fontsize * 1.4  # line height with padding
+
+    width = len(text) * char_width
+    height = char_height
+
+    return width, height
+
+
+def force_directed_label_layout(labels, iterations=100, k_attract=0.005, k_repel=15000):
+    """
+    Apply force-directed algorithm to separate overlapping labels.
+
+    Args:
+        labels: List of dicts with 'text', 'orig_x', 'orig_y', 'x', 'y', 'width', 'height'
+        iterations: Number of force-directed iterations
+        k_attract: Attraction force constant (toward original position)
+        k_repel: Repulsion force constant (away from overlapping labels)
+    """
+    positions = np.array([[label['x'], label['y']] for label in labels])
+    orig_positions = np.array([[label['orig_x'], label['orig_y']] for label in labels])
+
+    for iteration in range(iterations):
+        forces = np.zeros_like(positions)
+
+        # Attraction force toward original centroid positions
+        attract_force = k_attract * (orig_positions - positions)
+        forces += attract_force
+
+        # Repulsion forces between overlapping labels
+        for i, label_i in enumerate(labels):
+            for j, label_j in enumerate(labels):
+                if i >= j:
+                    continue
+
+                # Check if bounding boxes overlap
+                dx = positions[j][0] - positions[i][0]
+                dy = positions[j][1] - positions[i][1]
+
+                # Minimum separation needed (half-widths + half-heights)
+                min_dx = (label_i['width'] + label_j['width']) / 2
+                min_dy = (label_i['height'] + label_j['height']) / 2
+
+                # Only apply repulsion if bounding boxes actually overlap
+                if abs(dx) < min_dx and abs(dy) < min_dy:
+                    # Calculate actual overlap amounts (positive values mean overlap)
+                    overlap_x = min_dx - abs(dx)
+                    overlap_y = min_dy - abs(dy)
+
+                    # Only repel if there's actual overlap in both dimensions
+                    if overlap_x > 0 and overlap_y > 0:
+                        # Repulsion strength based on overlap area
+                        overlap_area = overlap_x * overlap_y
+                        repel_strength = k_repel * overlap_area
+
+                        # Direction of repulsion (away from each other)
+                        if abs(dx) < 1:
+                            dx = 1 if dx >= 0 else -1  # Avoid division by zero
+                        if abs(dy) < 1:
+                            dy = 1 if dy >= 0 else -1
+
+                        distance = max(np.sqrt(dx**2 + dy**2), 1)  # Prevent division by zero
+                        unit_dx = dx / distance
+                        unit_dy = dy / distance
+
+                        # Apply repulsive forces (push apart)
+                        forces[i][0] -= repel_strength * unit_dx
+                        forces[i][1] -= repel_strength * unit_dy
+                        forces[j][0] += repel_strength * unit_dx
+                        forces[j][1] += repel_strength * unit_dy
+
+        # Apply forces with damping
+        damping = 0.3
+        positions += forces * damping * 0.0005  # Scale factor for movement
+
+    # Update label positions with bounds checking
+    for i, label in enumerate(labels):
+        # Limit how far labels can move from their original positions
+        max_movement = 300000  # 300km max movement in projected units
+
+        dx = positions[i][0] - label['orig_x']
+        dy = positions[i][1] - label['orig_y']
+        distance = np.sqrt(dx**2 + dy**2)
+
+        if distance > max_movement:
+            # Scale back to maximum allowed movement
+            scale = max_movement / distance
+            dx *= scale
+            dy *= scale
+
+        label['x'] = label['orig_x'] + dx
+        label['y'] = label['orig_y'] + dy
 
 
 def render_graph(graph_file, output_file):
@@ -86,15 +184,51 @@ def render_graph(graph_file, output_file):
         # Set plot limits based on patch extents
         ax.autoscale()
 
-    # Add state labels with seat counts at center coordinates
+    # Get map bounds for scaling calculations
+    map_bounds = ax.get_xlim(), ax.get_ylim()
+    map_width = map_bounds[0][1] - map_bounds[0][0]
+
+    # Prepare labels for force-directed positioning
+    labels = []
+    fontsize = 10
     for state_code, data in G.nodes(data=True):
         x = data.get('x')
         y = data.get('y')
         seats = data.get('seats', 0)
         if x is not None and y is not None:
-            label = f"{state_code} ({seats})" if seats > 0 else state_code
-            ax.text(x, y, label, ha='center', va='center',
-                   fontsize=10, fontweight='bold', color='black')
+            text = f"{state_code} ({seats})" if seats > 0 else state_code
+            width, height = calculate_label_bbox(text, fontsize)
+
+            # Calculate label dimensions based on map scale
+            # Estimate: label should be proportional to map width
+            char_scale = map_width / 200  # Extremely large scale factor
+            data_width = len(text) * char_scale * 1.2  # Character width
+            data_height = char_scale * 3.0  # Line height
+
+            labels.append({
+                'text': text,
+                'orig_x': x,
+                'orig_y': y,
+                'x': x,
+                'y': y,
+                'width': data_width,
+                'height': data_height
+            })
+
+    print(f"Applying force-directed layout to {len(labels)} labels...")
+
+    # Apply force-directed algorithm to separate overlapping labels
+    force_directed_label_layout(labels, iterations=150)
+
+    # Draw labels at their adjusted positions
+    for label in labels:
+        # Draw the text label
+        ax.text(label['x'], label['y'], label['text'], ha='center', va='center',
+               fontsize=fontsize, fontweight='bold', color='black')
+
+    # Reset plot limits to original bounds (before labels were added)
+    if all_patches:
+        ax.autoscale()
 
     # Save as SVG
     print(f"Saving to {output_file}...")
