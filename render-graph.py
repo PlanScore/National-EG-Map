@@ -18,6 +18,17 @@ from matplotlib.collections import PatchCollection
 from matplotlib.axes import Axes
 from shapely.wkt import loads as wkt_loads
 
+# Grid aspect ratio overrides: (width_factor, height_factor)
+# Values < 1.0 make narrower/shorter, > 1.0 make wider/taller
+GRID_ASPECT_OVERRIDES = {
+    "CA": (0.8, 1.3),  # More vertical (narrower, taller)
+    "IN": (0.8, 1.3),  # More vertical
+    "IL": (0.8, 1.3),  # More vertical
+    "KY": (1.4, 0.7),  # More horizontal (wider, shorter)
+    "TN": (1.4, 0.7),  # More horizontal
+    "NC": (1.4, 0.7),  # More horizontal
+}
+
 
 def parse_wkt_polygon(wkt):
     """Parse WKT polygon string and return matplotlib patches."""
@@ -97,15 +108,13 @@ class StateLabel:
         text_height = char_height * num_lines
 
         # Calculate seat dots grid dimensions
-        grid_size = self._calculate_grid_size(self.seats)
+        grid_cols, grid_rows = self._calculate_grid_dimensions(self.seats)
         dot_size = 8  # 8px rectangles
         dot_margin = 2  # 2px margins
 
-        if grid_size > 0:
-            grid_width = grid_size * dot_size + (grid_size - 1) * dot_margin
-            # Calculate actual rows needed for the seats, not full square
-            rows_needed = math.ceil(self.seats / grid_size)
-            grid_height = rows_needed * dot_size + (rows_needed - 1) * dot_margin
+        if grid_cols > 0 and grid_rows > 0:
+            grid_width = grid_cols * dot_size + (grid_cols - 1) * dot_margin
+            grid_height = grid_rows * dot_size + (grid_rows - 1) * dot_margin
         else:
             grid_width = 0
             grid_height = 0
@@ -118,11 +127,10 @@ class StateLabel:
         self.height = text_height + padding + grid_height
 
         # Debug output for dimension validation
-        if grid_size > 0:
-            rows_needed = math.ceil(self.seats / grid_size)
+        if grid_cols > 0 and grid_rows > 0:
             print(
                 f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
-                f"grid={grid_width:.0f}x{grid_height:.0f} ({grid_size}x{rows_needed} for {self.seats} seats), "
+                f"grid={grid_width:.0f}x{grid_height:.0f} ({grid_cols}x{grid_rows} for {self.seats} seats), "
                 f"padding={padding:.0f}, total={self.width:.0f}x{self.height:.0f}"
             )
         else:
@@ -131,11 +139,27 @@ class StateLabel:
                 f"no grid, total={self.width:.0f}x{self.height:.0f}"
             )
 
-    def _calculate_grid_size(self, seats: int) -> int:
-        """Calculate the grid size (NxN) needed to fit the given number of seats."""
+    def _calculate_grid_dimensions(self, seats: int) -> tuple[int, int]:
+        """Calculate the grid dimensions (cols, rows) for the given number of seats."""
         if seats <= 0:
-            return 0
-        return math.ceil(math.sqrt(seats))
+            return (0, 0)
+
+        # Start with square grid as baseline
+        base_size = math.ceil(math.sqrt(seats))
+
+        # Apply aspect ratio overrides if this state has them
+        if self.state in GRID_ASPECT_OVERRIDES:
+            width_factor, height_factor = GRID_ASPECT_OVERRIDES[self.state]
+
+            # Adjust grid dimensions based on aspect ratio
+            cols = max(1, round(base_size * width_factor))
+            rows = math.ceil(seats / cols)
+
+            return (cols, rows)
+        else:
+            # Default square behavior - calculate actual rows needed
+            rows = math.ceil(seats / base_size)
+            return (base_size, rows)
 
     def get_map_dimensions(self, map_width: float) -> Tuple[float, float]:
         """Calculate dimensions scaled to map coordinates."""
@@ -233,7 +257,7 @@ class StateLabel:
             return
 
         # Grid parameters
-        grid_size = self._calculate_grid_size(self.seats)
+        grid_cols, grid_rows = self._calculate_grid_dimensions(self.seats)
         dot_size = 8  # pixels
         dot_margin = 2  # pixels
 
@@ -262,8 +286,8 @@ class StateLabel:
 
         # Draw seats as filled rectangles
         seats_drawn = 0
-        for row in range(grid_size):
-            for col in range(grid_size):
+        for row in range(grid_rows):
+            for col in range(grid_cols):
                 if seats_drawn >= self.seats:
                     break
 
