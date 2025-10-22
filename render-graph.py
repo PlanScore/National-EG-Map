@@ -8,6 +8,7 @@ with dark grey borders on a transparent background.
 
 import sys
 import pickle
+import math
 from dataclasses import dataclass
 from typing import Tuple, List, Dict, Any
 import numpy as np
@@ -81,7 +82,7 @@ class StateLabel:
         return f"{self.state}, {self.seats}"
 
     def _calculate_dimensions(self):
-        """Calculate label dimensions based on text and font size."""
+        """Calculate label dimensions based on text, font size, and seat dots grid."""
         # More accurate approximation for bold text
         char_width = self._fontsize * 0.8  # pixels per character (bold text is wider)
         char_height = self._fontsize * 1.4  # line height with padding
@@ -90,8 +91,33 @@ class StateLabel:
         max_line_length = max(len(line) for line in lines)
         num_lines = len(lines)
 
-        self.width = max_line_length * char_width
-        self.height = char_height * num_lines
+        text_width = max_line_length * char_width
+        text_height = char_height * num_lines
+
+        # Calculate seat dots grid dimensions
+        grid_size = self._calculate_grid_size(self.seats)
+        dot_size = 8  # 8px rectangles
+        dot_margin = 2  # 2px margins
+
+        if grid_size > 0:
+            grid_width = grid_size * dot_size + (grid_size - 1) * dot_margin
+            grid_height = grid_width  # square grid
+        else:
+            grid_width = 0
+            grid_height = 0
+
+        # Add spacing between text and grid
+        padding = 16 if grid_height > 0 else 0  # Only add padding if there's a grid
+
+        # Layout: text on top, grid below, left-aligned
+        self.width = max(text_width, grid_width)
+        self.height = text_height + padding + grid_height
+
+    def _calculate_grid_size(self, seats: int) -> int:
+        """Calculate the grid size (NxN) needed to fit the given number of seats."""
+        if seats <= 0:
+            return 0
+        return math.ceil(math.sqrt(seats))
 
     def get_map_dimensions(self, map_width: float) -> Tuple[float, float]:
         """Calculate dimensions scaled to map coordinates."""
@@ -121,7 +147,8 @@ class StateLabel:
         bbox_width = round(data_width)
         bbox_height = round(data_height)
 
-        # Draw bounding box as orange rectangle with rounded coordinates
+        # Position bbox centered on label position
+        # This creates the coordinate system that text and grid use
         bbox_left = label_x - bbox_width // 2
         bbox_bottom = label_y - bbox_height // 2
 
@@ -136,23 +163,88 @@ class StateLabel:
         )
         ax.add_patch(bbox_rect)
 
-    def render_text(self, ax: Axes) -> None:
+    def render_text(self, ax: Axes, map_width: float) -> None:
         """Render the text label."""
         # Round coordinates for cleaner SVG output
         label_x = round(self.x)
         label_y = round(self.y)
 
+        # Get actual dimensions for positioning using correct map_width
+        data_width, data_height = self.get_map_dimensions(map_width)
+
+        # Position text at top-left of the bounding area
+        # Label center is at (label_x, label_y), so bbox goes from:
+        # left: label_x - data_width/2  to  right: label_x + data_width/2
+        # bottom: label_y - data_height/2  to  top: label_y + data_height/2
+        text_x = label_x - data_width // 2  # Left edge of bbox
+        text_y = label_y + data_height // 2  # Top edge of bbox
+
         ax.text(
-            label_x,
-            label_y,
+            text_x,
+            text_y,
             self.text,
-            ha="center",
-            va="center",
+            ha="left",
+            va="top",
             fontsize=self._fontsize,
             fontweight="bold",
             color="black",
             fontfamily="monospace",
         )
+
+    def render_seat_dots(self, ax: Axes, map_width: float) -> None:
+        """Render the seat dots grid."""
+        if self.seats <= 0:
+            return
+
+        # Grid parameters
+        grid_size = self._calculate_grid_size(self.seats)
+        dot_size = 8  # pixels
+        dot_margin = 2  # pixels
+
+        # Scale to map coordinates
+        char_scale = map_width / 200
+        scaled_dot_size = dot_size * char_scale / 10
+        scaled_dot_margin = dot_margin * char_scale / 10
+
+        # Get label position and dimensions
+        label_x = round(self.x)
+        label_y = round(self.y)
+        data_width, data_height = self.get_map_dimensions(map_width)
+
+        # Calculate grid positioning - left-aligned, below text with 16px spacing
+        text_height = self._fontsize * 1.4 * char_scale / 10
+        padding = 16 * char_scale / 10
+
+        # Grid starts at left edge of bbox, positioned below text + padding
+        grid_start_x = label_x - data_width // 2  # Left edge of bbox
+        grid_start_y = (
+            label_y + data_height // 2 - text_height - padding
+        )  # Below text + padding
+
+        # Draw seats as filled rectangles
+        seats_drawn = 0
+        for row in range(grid_size):
+            for col in range(grid_size):
+                if seats_drawn >= self.seats:
+                    break
+
+                dot_x = grid_start_x + col * (scaled_dot_size + scaled_dot_margin)
+                dot_y = grid_start_y - row * (scaled_dot_size + scaled_dot_margin)
+
+                dot_rect = patches.Rectangle(
+                    (dot_x, dot_y),
+                    scaled_dot_size,
+                    scaled_dot_size,
+                    linewidth=0,
+                    edgecolor="none",
+                    facecolor="black",
+                    alpha=1.0,
+                )
+                ax.add_patch(dot_rect)
+                seats_drawn += 1
+
+            if seats_drawn >= self.seats:
+                break
 
     def to_force_dict(self, map_width: float) -> Dict[str, Any]:
         """Convert to dictionary format for force-directed algorithm."""
@@ -409,9 +501,10 @@ def render_graph(graph_file, output_file):
 
     # Draw labels at their adjusted positions
     for state_label in state_labels:
-        # Render bounding box and text using StateLabel methods
+        # Render bounding box, text, and seat dots using StateLabel methods
         state_label.render_bbox(ax, map_width)
-        state_label.render_text(ax)
+        state_label.render_text(ax, map_width)
+        state_label.render_seat_dots(ax, map_width)
 
     # Reset plot limits to original bounds (before labels were added) with rounded bounds
     if all_patches:
