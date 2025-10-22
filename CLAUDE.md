@@ -14,3 +14,4 @@ This is a Python project that uses a virtual environment located in `.venv`.
 ## Development
 - Run tests and linting before commits using `ruff` for linting and formatting
 - Follow Python best practices and PEP 8 style guidelines
+- Preview SVG output by opening in Safari with `open -a Safari us-states.svg`

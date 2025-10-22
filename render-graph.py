@@ -49,13 +49,17 @@ def parse_wkt_polygon(wkt):
 
 
 def calculate_label_bbox(text, fontsize=10):
-    """Estimate bounding box dimensions for a text label."""
+    """Estimate bounding box dimensions for a text label (supports multiline)."""
     # More accurate approximation for bold text
     char_width = fontsize * 0.8  # pixels per character (bold text is wider)
     char_height = fontsize * 1.4  # line height with padding
 
-    width = len(text) * char_width
-    height = char_height
+    lines = text.split("\n")
+    max_line_length = max(len(line) for line in lines)
+    num_lines = len(lines)
+
+    width = max_line_length * char_width
+    height = char_height * num_lines
 
     return width, height
 
@@ -89,7 +93,7 @@ def has_any_overlaps(labels):
 
 
 def force_directed_label_layout(
-    labels, max_iterations=300, k_attract=0.005, k_repel=50000
+    labels, max_iterations=10000, k_attract=0.005, k_repel=50000
 ):
     """
     Apply force-directed algorithm to separate overlapping labels.
@@ -248,33 +252,27 @@ def render_graph(graph_file, output_file):
 
     # Prepare labels for force-directed positioning
     labels = []
-    fontsize = 5  # Halved from 10
+    fontsize = 12
     for state_code, data in G.nodes(data=True):
         x = data.get("x")
         y = data.get("y")
         seats = data.get("seats", 0)
         if x is not None and y is not None and seats > 0:
-            text = f"{state_code} ({seats})" if seats > 0 else state_code
+            text = f"{state_code}\n{seats}" if seats > 0 else state_code
             width, height = calculate_label_bbox(text, fontsize)
 
-            # Calculate label dimensions based on map scale and actual font size
-            # For monospace fonts, use more accurate character width calculation
+            # Scale the calculated bbox dimensions to map coordinates
             char_scale = map_width / 200  # Scale factor for text size vs map
 
-            # Monospace font character width (adjusted for smaller font size)
-            monospace_char_width = (
-                fontsize * 0.6
-            )  # Monospace chars are typically 0.6x the font size
-            data_width = (
-                len(text) * char_scale * (monospace_char_width / 10)
-            )  # Scale relative to original 10pt
+            # Use the proper multiline bbox calculation and scale to map coordinates
+            data_width = width * char_scale / 10  # Scale relative to original 10pt font
             data_height = (
-                char_scale * (fontsize / 10) * 1.5
-            )  # Scale height with font size
+                height * char_scale / 10
+            )  # Scale relative to original 10pt font
 
-            # Adjust bboxes: 140% wider (1.6 * 1.5), 30% taller (10% + 20%)
-            data_width *= 2.4
-            data_height *= 1.3
+            # Adjust bboxes: 126% wider (140% - 10%), 60% taller (50% + 10%)
+            data_width *= 2.16
+            data_height *= 1.65
 
             labels.append(
                 {
