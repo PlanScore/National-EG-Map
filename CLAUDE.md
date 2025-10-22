@@ -12,5 +12,5 @@ This is a Python project that uses a virtual environment located in `.venv`.
 - This prevents unwanted files from being committed to the repository
 
 ## Development
-- Run tests and linting before commits
+- Run tests and linting before commits using `ruff` for linting and formatting
 - Follow Python best practices and PEP 8 style guidelines
