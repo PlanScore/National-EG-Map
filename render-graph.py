@@ -28,17 +28,18 @@ def parse_wkt_polygon(wkt):
 
         patches_list = []
         for poly in polygons:
-            # Get exterior coordinates
-            exterior_coords = list(poly.exterior.coords)
+            # Get exterior coordinates and round to nearest whole number
+            exterior_coords = [(round(x), round(y)) for x, y in poly.exterior.coords]
             if exterior_coords:
                 patch = patches.Polygon(exterior_coords, closed=True)
                 patches_list.append(patch)
 
-            # Handle holes
+            # Handle holes (interior rings) - round coordinates
             for interior in poly.interiors:
-                hole_coords = list(interior.coords)
+                hole_coords = [(round(x), round(y)) for x, y in interior.coords]
                 if hole_coords:
-                    # Holes are handled by matplotlib automatically with path operations
+                    # Note: Proper hole handling would require Path objects,
+                    # but for simplicity we'll let matplotlib handle this automatically
                     pass
 
         return patches_list
@@ -300,11 +301,15 @@ def render_graph(graph_file, output_file):
 
     # Draw labels at their adjusted positions
     for label in labels:
-        # Draw bounding box as orange rectangle
-        bbox_left = label["x"] - label["width"] / 2
-        bbox_bottom = label["y"] - label["height"] / 2
-        bbox_width = label["width"]
-        bbox_height = label["height"]
+        # Round all coordinates for cleaner SVG output
+        label_x = round(label["x"])
+        label_y = round(label["y"])
+        bbox_width = round(label["width"])
+        bbox_height = round(label["height"])
+
+        # Draw bounding box as orange rectangle with rounded coordinates
+        bbox_left = label_x - bbox_width // 2
+        bbox_bottom = label_y - bbox_height // 2
 
         bbox_rect = patches.Rectangle(
             (bbox_left, bbox_bottom),
@@ -319,10 +324,10 @@ def render_graph(graph_file, output_file):
         # but overlaps will be visible as darker orange areas
         ax.add_patch(bbox_rect)
 
-        # Draw the text label with monospace font
+        # Draw the text label with monospace font using rounded coordinates
         ax.text(
-            label["x"],
-            label["y"],
+            label_x,
+            label_y,
             label["text"],
             ha="center",
             va="center",
@@ -332,9 +337,14 @@ def render_graph(graph_file, output_file):
             fontfamily="monospace",
         )
 
-    # Reset plot limits to original bounds (before labels were added)
+    # Reset plot limits to original bounds (before labels were added) with rounded bounds
     if all_patches:
         ax.autoscale()
+        # Get current limits and round them to integers for cleaner SVG
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        ax.set_xlim(round(xlim[0]), round(xlim[1]))
+        ax.set_ylim(round(ylim[0]), round(ylim[1]))
 
     # Save as SVG
     print(f"Saving to {output_file}...")
