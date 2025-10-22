@@ -54,6 +54,11 @@ def create_graph():
                 geometry.Transform(coord_transform)
                 wkt = geometry.ExportToWkt()
 
+                # Calculate centroid
+                centroid = geometry.Centroid()
+                center_x = centroid.GetX()
+                center_y = centroid.GetY()
+
                 # Update bounds
                 envelope = geometry.GetEnvelope()
                 min_x = min(min_x, envelope[0])
@@ -62,9 +67,11 @@ def create_graph():
                 max_y = max(max_y, envelope[3])
             else:
                 wkt = None
+                center_x = None
+                center_y = None
 
-            # Add node with reprojected WKT geometry
-            G.add_node(state_code, wkt=wkt)
+            # Add node with reprojected WKT geometry and center coordinates
+            G.add_node(state_code, wkt=wkt, x=center_x, y=center_y)
             node_count += 1
 
     print(f"Added {node_count} nodes")
@@ -135,16 +142,25 @@ def create_graph():
     print(f"  Nodes with WKT: {nodes_with_wkt}/{G.number_of_nodes()}")
     print(f"  Edges with WKT: {edges_with_wkt}/{G.number_of_edges()}")
 
-    # Show sample WKT data lengths
+    # Show sample WKT data lengths and center coordinates
     if G.nodes():
         first_node = list(G.nodes(data=True))[0]
         wkt_len = len(first_node[1].get('wkt', '')) if first_node[1].get('wkt') else 0
+        center_x = first_node[1].get('x')
+        center_y = first_node[1].get('y')
         print(f"  Sample node WKT length: {wkt_len} chars")
+        if center_x is not None and center_y is not None:
+            print(f"  Sample node center: ({center_x:.0f}, {center_y:.0f})")
 
     if G.edges():
         first_edge = list(G.edges(data=True))[0]
         wkt_len = len(first_edge[2].get('wkt', '')) if first_edge[2].get('wkt') else 0
         print(f"  Sample edge WKT length: {wkt_len} chars")
+
+    # Validate center coordinates
+    nodes_with_centers = sum(1 for _, data in G.nodes(data=True)
+                           if data.get('x') is not None and data.get('y') is not None)
+    print(f"  Nodes with center coordinates: {nodes_with_centers}/{G.number_of_nodes()}")
 
     return G
 

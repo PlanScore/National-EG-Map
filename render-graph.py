@@ -86,6 +86,14 @@ def render_graph(graph_file, output_file):
         # Set plot limits based on patch extents
         ax.autoscale()
 
+    # Add state labels at center coordinates
+    for state_code, data in G.nodes(data=True):
+        x = data.get('x')
+        y = data.get('y')
+        if x is not None and y is not None:
+            ax.text(x, y, state_code, ha='center', va='center',
+                   fontsize=10, fontweight='bold', color='black')
+
     # Save as SVG
     print(f"Saving to {output_file}...")
     plt.savefig(output_file, format='svg', transparent=True,
