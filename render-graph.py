@@ -59,89 +59,134 @@ def calculate_label_bbox(text, fontsize=10):
     return width, height
 
 
-def force_directed_label_layout(labels, iterations=100, k_attract=0.005, k_repel=15000):
+def bboxes_overlap(label1, label2):
+    """Check if two label bounding boxes overlap."""
+    # Get bbox corners
+    left1 = label1['x'] - label1['width'] / 2
+    right1 = label1['x'] + label1['width'] / 2
+    top1 = label1['y'] + label1['height'] / 2
+    bottom1 = label1['y'] - label1['height'] / 2
+
+    left2 = label2['x'] - label2['width'] / 2
+    right2 = label2['x'] + label2['width'] / 2
+    top2 = label2['y'] + label2['height'] / 2
+    bottom2 = label2['y'] - label2['height'] / 2
+
+    # Check if they don't overlap (easier to check)
+    if right1 <= left2 or right2 <= left1 or top1 <= bottom2 or top2 <= bottom1:
+        return False
+    return True
+
+
+def has_any_overlaps(labels):
+    """Check if any labels have overlapping bounding boxes."""
+    for i in range(len(labels)):
+        for j in range(i + 1, len(labels)):
+            if bboxes_overlap(labels[i], labels[j]):
+                return True
+    return False
+
+
+def force_directed_label_layout(labels, max_iterations=300, k_attract=0.005, k_repel=50000):
     """
     Apply force-directed algorithm to separate overlapping labels.
+    Stops when no overlaps are detected or max iterations reached.
 
     Args:
         labels: List of dicts with 'text', 'orig_x', 'orig_y', 'x', 'y', 'width', 'height'
-        iterations: Number of force-directed iterations
+        max_iterations: Maximum number of iterations
         k_attract: Attraction force constant (toward original position)
         k_repel: Repulsion force constant (away from overlapping labels)
     """
     positions = np.array([[label['x'], label['y']] for label in labels])
     orig_positions = np.array([[label['orig_x'], label['orig_y']] for label in labels])
 
-    for iteration in range(iterations):
+    for iteration in range(max_iterations):
         forces = np.zeros_like(positions)
 
-        # Attraction force toward original centroid positions
-        attract_force = k_attract * (orig_positions - positions)
-        forces += attract_force
+        # Temporarily disable attraction force to debug repulsion
+        # attract_force = k_attract * (orig_positions - positions)
+        # forces += attract_force
+
+        # Update label positions for accurate overlap checking
+        for i, label in enumerate(labels):
+            label['x'], label['y'] = positions[i]
+
+        # Count overlaps for debugging
+        overlaps_found = False
+        overlap_count = 0
 
         # Repulsion forces between overlapping labels
-        for i, label_i in enumerate(labels):
-            for j, label_j in enumerate(labels):
-                if i >= j:
-                    continue
+        for i in range(len(labels)):
+            for j in range(i + 1, len(labels)):
+                label_i = labels[i]
+                label_j = labels[j]
 
                 # Check if bounding boxes overlap
-                dx = positions[j][0] - positions[i][0]
-                dy = positions[j][1] - positions[i][1]
+                if bboxes_overlap(label_i, label_j):
+                    overlaps_found = True
+                    overlap_count += 1
 
-                # Minimum separation needed (half-widths + half-heights)
-                min_dx = (label_i['width'] + label_j['width']) / 2
-                min_dy = (label_i['height'] + label_j['height']) / 2
+                    # Calculate repulsion force
+                    dx = positions[j][0] - positions[i][0]
+                    dy = positions[j][1] - positions[i][1]
 
-                # Only apply repulsion if bounding boxes actually overlap
-                if abs(dx) < min_dx and abs(dy) < min_dy:
-                    # Calculate actual overlap amounts (positive values mean overlap)
-                    overlap_x = min_dx - abs(dx)
-                    overlap_y = min_dy - abs(dy)
+                    # Avoid division by zero
+                    if abs(dx) < 1:
+                        dx = 1 if dx >= 0 else -1
+                    if abs(dy) < 1:
+                        dy = 1 if dy >= 0 else -1
 
-                    # Only repel if there's actual overlap in both dimensions
-                    if overlap_x > 0 and overlap_y > 0:
-                        # Repulsion strength based on overlap area
-                        overlap_area = overlap_x * overlap_y
-                        repel_strength = k_repel * overlap_area
+                    distance = max(np.sqrt(dx**2 + dy**2), 1)
+                    unit_dx = dx / distance
+                    unit_dy = dy / distance
 
-                        # Direction of repulsion (away from each other)
-                        if abs(dx) < 1:
-                            dx = 1 if dx >= 0 else -1  # Avoid division by zero
-                        if abs(dy) < 1:
-                            dy = 1 if dy >= 0 else -1
+                    # Stronger repulsion force that scales with overlap
+                    overlap_x = max(0, (label_i['width'] + label_j['width']) / 2 - abs(dx))
+                    overlap_y = max(0, (label_i['height'] + label_j['height']) / 2 - abs(dy))
+                    overlap_severity = (overlap_x * overlap_y) / max(label_i['width'] * label_i['height'], 1)
 
-                        distance = max(np.sqrt(dx**2 + dy**2), 1)  # Prevent division by zero
-                        unit_dx = dx / distance
-                        unit_dy = dy / distance
+                    repel_strength = k_repel * (1 + overlap_severity * 10) / max(distance, 50)
 
-                        # Apply repulsive forces (push apart)
-                        forces[i][0] -= repel_strength * unit_dx
-                        forces[i][1] -= repel_strength * unit_dy
-                        forces[j][0] += repel_strength * unit_dx
-                        forces[j][1] += repel_strength * unit_dy
+                    # Apply repulsive forces (push apart)
+                    forces[i][0] -= repel_strength * unit_dx
+                    forces[i][1] -= repel_strength * unit_dy
+                    forces[j][0] += repel_strength * unit_dx
+                    forces[j][1] += repel_strength * unit_dy
 
-        # Apply forces with damping
-        damping = 0.3
-        positions += forces * damping * 0.0005  # Scale factor for movement
+        print(f"Iteration {iteration + 1}: {overlap_count} overlaps found")
 
-    # Update label positions with bounds checking
+        # Debug: check if positions are actually changing
+        old_positions = positions.copy()
+
+        # Apply forces with much larger movement to match coordinate system scale
+        damping = 1.0
+        movement_scale = 1000  # Scale movement to match map coordinate system
+        positions += forces * damping * movement_scale
+
+        # Check how much things moved
+        movement = np.sqrt(np.sum((positions - old_positions)**2, axis=1))
+        max_movement = np.max(movement)
+        avg_movement = np.mean(movement)
+        print(f"  Max movement: {max_movement:.1f}, Avg movement: {avg_movement:.1f}")
+
+        # Also check force magnitudes
+        force_magnitudes = np.sqrt(np.sum(forces**2, axis=1))
+        max_force = np.max(force_magnitudes)
+        avg_force = np.mean(force_magnitudes)
+        print(f"  Max force: {max_force:.1f}, Avg force: {avg_force:.1f}")
+
+        # Check if we've resolved all overlaps
+        if not overlaps_found:
+            print(f"No overlaps detected after {iteration + 1} iterations")
+            break
+
+    print(f"Final check: {overlap_count} overlaps remaining")
+
+    # Update label positions - no distance constraints
     for i, label in enumerate(labels):
-        # Limit how far labels can move from their original positions
-        max_movement = 300000  # 300km max movement in projected units
-
-        dx = positions[i][0] - label['orig_x']
-        dy = positions[i][1] - label['orig_y']
-        distance = np.sqrt(dx**2 + dy**2)
-
-        if distance > max_movement:
-            # Scale back to maximum allowed movement
-            scale = max_movement / distance
-            dx *= scale
-            dy *= scale
-
-        label['x'] = label['orig_x'] + dx
-        label['y'] = label['orig_y'] + dy
+        label['x'] = positions[i][0]
+        label['y'] = positions[i][1]
 
 
 def render_graph(graph_file, output_file):
@@ -201,7 +246,7 @@ def render_graph(graph_file, output_file):
 
             # Calculate label dimensions based on map scale
             # Estimate: label should be proportional to map width
-            char_scale = map_width / 200  # Extremely large scale factor
+            char_scale = map_width / 200  # Scale factor for text size vs map
             data_width = len(text) * char_scale * 1.2  # Character width
             data_height = char_scale * 3.0  # Line height
 
@@ -217,11 +262,26 @@ def render_graph(graph_file, output_file):
 
     print(f"Applying force-directed layout to {len(labels)} labels...")
 
+    # Debug: print some label dimensions
+    for i, label in enumerate(labels[:5]):  # Print first 5
+        print(f"Label {label['text']}: width={label['width']:.0f}, height={label['height']:.0f}")
+
     # Apply force-directed algorithm to separate overlapping labels
-    force_directed_label_layout(labels, iterations=150)
+    force_directed_label_layout(labels)
 
     # Draw labels at their adjusted positions
     for label in labels:
+        # Draw bounding box as orange rectangle
+        bbox_left = label['x'] - label['width'] / 2
+        bbox_bottom = label['y'] - label['height'] / 2
+        bbox_width = label['width']
+        bbox_height = label['height']
+
+        bbox_rect = patches.Rectangle((bbox_left, bbox_bottom), bbox_width, bbox_height,
+                                    linewidth=1, edgecolor='orange', facecolor='none',
+                                    alpha=0.8)
+        ax.add_patch(bbox_rect)
+
         # Draw the text label
         ax.text(label['x'], label['y'], label['text'], ha='center', va='center',
                fontsize=fontsize, fontweight='bold', color='black')
