@@ -8,10 +8,13 @@ with dark grey borders on a transparent background.
 
 import sys
 import pickle
+from dataclasses import dataclass
+from typing import Tuple, List, Dict, Any
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from matplotlib.collections import PatchCollection
+from matplotlib.axes import Axes
 from shapely.wkt import loads as wkt_loads
 
 
@@ -46,6 +49,123 @@ def parse_wkt_polygon(wkt):
     except Exception as e:
         print(f"Error parsing WKT: {e}")
         return []
+
+
+@dataclass
+class StateLabel:
+    """Represents a state label with position, text, and rendering properties."""
+
+    state: str
+    seats: int
+    orig_x: float
+    orig_y: float
+    x: float = None
+    y: float = None
+    width: float = None
+    height: float = None
+
+    # Internal implementation detail
+    _fontsize: float = 7
+
+    def __post_init__(self):
+        """Initialize position and calculate dimensions after creation."""
+        if self.x is None:
+            self.x = self.orig_x
+        if self.y is None:
+            self.y = self.orig_y
+        self._calculate_dimensions()
+
+    @property
+    def text(self) -> str:
+        """Generate the display text for this label."""
+        return f"{self.state}, {self.seats}"
+
+    def _calculate_dimensions(self):
+        """Calculate label dimensions based on text and font size."""
+        # More accurate approximation for bold text
+        char_width = self._fontsize * 0.8  # pixels per character (bold text is wider)
+        char_height = self._fontsize * 1.4  # line height with padding
+
+        lines = self.text.split("\n")
+        max_line_length = max(len(line) for line in lines)
+        num_lines = len(lines)
+
+        self.width = max_line_length * char_width
+        self.height = char_height * num_lines
+
+    def get_map_dimensions(self, map_width: float) -> Tuple[float, float]:
+        """Calculate dimensions scaled to map coordinates."""
+        char_scale = map_width / 200  # Scale factor for text size vs map
+
+        # Use the calculated bbox dimensions and scale to map coordinates
+        data_width = (
+            self.width * char_scale / 10
+        )  # Scale relative to original 10pt font
+        data_height = (
+            self.height * char_scale / 10
+        )  # Scale relative to original 10pt font
+
+        # Adjust bboxes: 126% wider (140% - 10%), 60% taller (50% + 10%)
+        data_width *= 2.16
+        data_height *= 1.65
+
+        return data_width, data_height
+
+    def render_bbox(self, ax: Axes, map_width: float) -> None:
+        """Render the orange bounding box for this label."""
+        data_width, data_height = self.get_map_dimensions(map_width)
+
+        # Round all coordinates for cleaner SVG output
+        label_x = round(self.x)
+        label_y = round(self.y)
+        bbox_width = round(data_width)
+        bbox_height = round(data_height)
+
+        # Draw bounding box as orange rectangle with rounded coordinates
+        bbox_left = label_x - bbox_width // 2
+        bbox_bottom = label_y - bbox_height // 2
+
+        bbox_rect = patches.Rectangle(
+            (bbox_left, bbox_bottom),
+            bbox_width,
+            bbox_height,
+            linewidth=0,
+            edgecolor="none",
+            facecolor="orange",
+            alpha=0.5,
+        )
+        ax.add_patch(bbox_rect)
+
+    def render_text(self, ax: Axes) -> None:
+        """Render the text label."""
+        # Round coordinates for cleaner SVG output
+        label_x = round(self.x)
+        label_y = round(self.y)
+
+        ax.text(
+            label_x,
+            label_y,
+            self.text,
+            ha="center",
+            va="center",
+            fontsize=self._fontsize,
+            fontweight="bold",
+            color="black",
+            fontfamily="monospace",
+        )
+
+    def to_force_dict(self, map_width: float) -> Dict[str, Any]:
+        """Convert to dictionary format for force-directed algorithm."""
+        data_width, data_height = self.get_map_dimensions(map_width)
+        return {
+            "text": self.text,
+            "orig_x": self.orig_x,
+            "orig_y": self.orig_y,
+            "x": self.x,
+            "y": self.y,
+            "width": data_width,
+            "height": data_height,
+        }
 
 
 def calculate_label_bbox(text, fontsize=10):
@@ -251,89 +371,47 @@ def render_graph(graph_file, output_file):
     map_width = map_bounds[0][1] - map_bounds[0][0]
 
     # Prepare labels for force-directed positioning
-    labels = []
-    fontsize = 12
+    state_labels: List[StateLabel] = []
     for state_code, data in G.nodes(data=True):
         x = data.get("x")
         y = data.get("y")
         seats = data.get("seats", 0)
         if x is not None and y is not None and seats > 0:
-            text = f"{state_code}\n{seats}" if seats > 0 else state_code
-            width, height = calculate_label_bbox(text, fontsize)
-
-            # Scale the calculated bbox dimensions to map coordinates
-            char_scale = map_width / 200  # Scale factor for text size vs map
-
-            # Use the proper multiline bbox calculation and scale to map coordinates
-            data_width = width * char_scale / 10  # Scale relative to original 10pt font
-            data_height = (
-                height * char_scale / 10
-            )  # Scale relative to original 10pt font
-
-            # Adjust bboxes: 126% wider (140% - 10%), 60% taller (50% + 10%)
-            data_width *= 2.16
-            data_height *= 1.65
-
-            labels.append(
-                {
-                    "text": text,
-                    "orig_x": x,
-                    "orig_y": y,
-                    "x": x,
-                    "y": y,
-                    "width": data_width,
-                    "height": data_height,
-                }
+            state_label = StateLabel(
+                state=state_code,
+                seats=seats,
+                orig_x=x,
+                orig_y=y,
             )
+            state_labels.append(state_label)
 
-    print(f"Applying force-directed layout to {len(labels)} labels...")
+    print(f"Applying force-directed layout to {len(state_labels)} labels...")
 
     # Debug: print some label dimensions
-    for i, label in enumerate(labels[:5]):  # Print first 5
+    for i, state_label in enumerate(state_labels[:5]):  # Print first 5
+        data_width, data_height = state_label.get_map_dimensions(map_width)
         print(
-            f"Label {label['text']}: width={label['width']:.0f}, height={label['height']:.0f}"
+            f"Label {state_label.text}: width={data_width:.0f}, height={data_height:.0f}"
         )
+
+    # Convert StateLabels to force dict format for the algorithm
+    force_labels: List[Dict[str, Any]] = [
+        label.to_force_dict(map_width) for label in state_labels
+    ]
 
     # Apply force-directed algorithm to separate overlapping labels
-    force_directed_label_layout(labels)
+    force_directed_label_layout(force_labels)
+
+    # Update StateLabel positions from force results
+    for state_label, force_label in zip(state_labels, force_labels):
+        state_label.x = force_label["x"]
+        state_label.y = force_label["y"]
 
     # Draw labels at their adjusted positions
-    for label in labels:
-        # Round all coordinates for cleaner SVG output
-        label_x = round(label["x"])
-        label_y = round(label["y"])
-        bbox_width = round(label["width"])
-        bbox_height = round(label["height"])
-
-        # Draw bounding box as orange rectangle with rounded coordinates
-        bbox_left = label_x - bbox_width // 2
-        bbox_bottom = label_y - bbox_height // 2
-
-        bbox_rect = patches.Rectangle(
-            (bbox_left, bbox_bottom),
-            bbox_width,
-            bbox_height,
-            linewidth=0,
-            edgecolor="none",
-            facecolor="orange",
-            alpha=0.5,
-        )
-        # Note: SVG doesn't support blend modes directly through matplotlib,
-        # but overlaps will be visible as darker orange areas
-        ax.add_patch(bbox_rect)
-
-        # Draw the text label with monospace font using rounded coordinates
-        ax.text(
-            label_x,
-            label_y,
-            label["text"],
-            ha="center",
-            va="center",
-            fontsize=fontsize,
-            fontweight="bold",
-            color="black",
-            fontfamily="monospace",
-        )
+    for state_label in state_labels:
+        # Render bounding box and text using StateLabel methods
+        state_label.render_bbox(ax, map_width)
+        state_label.render_text(ax)
 
     # Reset plot limits to original bounds (before labels were added) with rounded bounds
     if all_patches:
