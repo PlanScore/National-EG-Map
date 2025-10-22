@@ -83,9 +83,11 @@ class StateLabel:
 
     def _calculate_dimensions(self):
         """Calculate label dimensions based on text, font size, and seat dots grid."""
-        # More accurate approximation for bold text
-        char_width = self._fontsize * 0.8  # pixels per character (bold text is wider)
-        char_height = self._fontsize * 1.4  # line height with padding
+        # More generous approximation for bold monospace text
+        char_width = (
+            self._fontsize * 1.5
+        )  # pixels per character (bold monospace is quite wide)
+        char_height = self._fontsize * 1.0  # line height closer to actual font size
 
         lines = self.text.split("\n")
         max_line_length = max(len(line) for line in lines)
@@ -101,7 +103,9 @@ class StateLabel:
 
         if grid_size > 0:
             grid_width = grid_size * dot_size + (grid_size - 1) * dot_margin
-            grid_height = grid_width  # square grid
+            # Calculate actual rows needed for the seats, not full square
+            rows_needed = math.ceil(self.seats / grid_size)
+            grid_height = rows_needed * dot_size + (rows_needed - 1) * dot_margin
         else:
             grid_width = 0
             grid_height = 0
@@ -112,6 +116,20 @@ class StateLabel:
         # Layout: text on top, grid below, left-aligned
         self.width = max(text_width, grid_width)
         self.height = text_height + padding + grid_height
+
+        # Debug output for dimension validation
+        if grid_size > 0:
+            rows_needed = math.ceil(self.seats / grid_size)
+            print(
+                f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
+                f"grid={grid_width:.0f}x{grid_height:.0f} ({grid_size}x{rows_needed} for {self.seats} seats), "
+                f"padding={padding:.0f}, total={self.width:.0f}x{self.height:.0f}"
+            )
+        else:
+            print(
+                f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
+                f"no grid, total={self.width:.0f}x{self.height:.0f}"
+            )
 
     def _calculate_grid_size(self, seats: int) -> int:
         """Calculate the grid size (NxN) needed to fit the given number of seats."""
@@ -131,9 +149,16 @@ class StateLabel:
             self.height * char_scale / 10
         )  # Scale relative to original 10pt font
 
-        # Adjust bboxes: 126% wider (140% - 10%), 60% taller (50% + 10%)
-        data_width *= 2.16
-        data_height *= 1.65
+        # Add minimal padding to bbox for better visual separation
+        data_width *= 1.05  # 5% padding
+        data_height *= 1.0  # No extra padding on height
+
+        # Debug output for scaling
+        print(
+            f"DEBUG {self.state} scaling: raw={self.width:.0f}x{self.height:.0f}, "
+            f"scaled={data_width / 10:.0f}x{data_height / 10:.0f}, "
+            f"final={data_width:.0f}x{data_height:.0f}"
+        )
 
         return data_width, data_height
 
@@ -212,7 +237,7 @@ class StateLabel:
         data_width, data_height = self.get_map_dimensions(map_width)
 
         # Calculate grid positioning - left-aligned, below text with 16px spacing
-        text_height = self._fontsize * 1.4 * char_scale / 10
+        text_height = self._fontsize * 1.0 * char_scale / 10
         padding = 16 * char_scale / 10
 
         # Grid starts at left edge of bbox, positioned below text + padding
