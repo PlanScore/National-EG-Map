@@ -17,9 +17,9 @@ def create_graph():
     polygons_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Polygons.shp"
     lines_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Lines.shp"
 
-    # Create coordinate transformation to EPSG:102004
+    # Create coordinate transformation to ESRI:102004 (Lambert Azimuthal Equal Area)
     target_srs = osr.SpatialReference()
-    target_srs.ImportFromEPSG(102004)
+    target_srs.ImportFromProj4('+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +a=6370997 +b=6370997 +units=m +no_defs')
 
     # Create undirected graph
     G = nx.Graph()
@@ -110,7 +110,7 @@ def create_graph():
     print(f"  Nodes: {G.number_of_nodes()}")
     print(f"  Edges: {G.number_of_edges()}")
     print(f"  Connected components: {nx.number_connected_components(G)}")
-    print("  Coordinate system: EPSG:102004 (Lambert Azimuthal Equal Area)")
+    print("  Coordinate system: ESRI:102004 (Lambert Azimuthal Equal Area)")
     if min_x != float('inf'):
         print(f"  Data bounds: ({min_x:.0f}, {min_y:.0f}) to ({max_x:.0f}, {max_y:.0f})")
         width = max_x - min_x
