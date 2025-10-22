@@ -79,7 +79,7 @@ class StateLabel:
     @property
     def text(self) -> str:
         """Generate the display text for this label."""
-        return f"{self.state}, {self.seats}"
+        return self.state
 
     def _calculate_dimensions(self):
         """Calculate label dimensions based on text, font size, and seat dots grid."""
@@ -149,9 +149,16 @@ class StateLabel:
             self.height * char_scale / 10
         )  # Scale relative to original 10pt font
 
-        # Add minimal padding to bbox for better visual separation
+        # Add padding to bbox for better visual separation
+        char_scale = map_width / 200
+        margin_4px = 4 * char_scale / 10  # Convert 4px to map coordinates
+
         data_width *= 1.05  # 5% padding
         data_height *= 1.0  # No extra padding on height
+
+        # Add 4px margin on all sides
+        data_width += 2 * margin_4px  # 4px on each side
+        data_height += 2 * margin_4px  # 4px on each side
 
         # Debug output for scaling
         print(
@@ -197,12 +204,16 @@ class StateLabel:
         # Get actual dimensions for positioning using correct map_width
         data_width, data_height = self.get_map_dimensions(map_width)
 
-        # Position text at top-left of the bounding area
+        # Calculate 4px margin in map coordinates
+        char_scale = map_width / 200
+        margin_4px = 4 * char_scale / 10
+
+        # Position text at top-left of the content area (inside margin)
         # Label center is at (label_x, label_y), so bbox goes from:
         # left: label_x - data_width/2  to  right: label_x + data_width/2
         # bottom: label_y - data_height/2  to  top: label_y + data_height/2
-        text_x = label_x - data_width // 2  # Left edge of bbox
-        text_y = label_y + data_height // 2  # Top edge of bbox
+        text_x = label_x - data_width // 2 + margin_4px  # Left edge + margin
+        text_y = label_y + data_height // 2 - margin_4px  # Top edge - margin
 
         ax.text(
             text_x,
@@ -240,11 +251,14 @@ class StateLabel:
         text_height = self._fontsize * 1.0 * char_scale / 10
         padding = 16 * char_scale / 10
 
-        # Grid starts at left edge of bbox, positioned below text + padding
-        grid_start_x = label_x - data_width // 2  # Left edge of bbox
+        # Calculate 4px margin in map coordinates
+        margin_4px = 4 * char_scale / 10
+
+        # Grid starts at left edge of content area (inside margin), positioned below text + padding
+        grid_start_x = label_x - data_width // 2 + margin_4px  # Left edge + margin
         grid_start_y = (
-            label_y + data_height // 2 - text_height - padding
-        )  # Below text + padding
+            label_y + data_height // 2 - margin_4px - text_height - padding
+        )  # Below text + padding, inside margin
 
         # Draw seats as filled rectangles
         seats_drawn = 0
