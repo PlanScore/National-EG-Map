@@ -8,7 +8,7 @@ Edges correspond to state boundary lines connecting adjacent states.
 
 import sys
 import pickle
-from osgeo import ogr
+from osgeo import ogr, osr
 import networkx as nx
 
 
@@ -17,8 +17,15 @@ def create_graph():
     polygons_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Polygons.shp"
     lines_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Lines.shp"
 
+    # Create coordinate transformation to EPSG:102004
+    target_srs = osr.SpatialReference()
+    target_srs.ImportFromEPSG(102004)
+
     # Create undirected graph
     G = nx.Graph()
+
+    # Track overall bounds
+    min_x, min_y, max_x, max_y = float('inf'), float('inf'), float('-inf'), float('-inf')
 
     # Process polygon nodes
     print("Loading polygon data...")
@@ -27,16 +34,32 @@ def create_graph():
         raise RuntimeError(f"Could not open {polygons_url}")
 
     polygons_layer = polygons_ds.GetLayer()
+
+    # Create coordinate transformation for polygons
+    source_srs = polygons_layer.GetSpatialRef()
+    coord_transform = osr.CoordinateTransformation(source_srs, target_srs)
+
     node_count = 0
 
     for feature in polygons_layer:
         state_code = feature.GetField('ISO3166_2')
         if state_code:
-            # Get geometry as WKT
+            # Get geometry and reproject
             geometry = feature.GetGeometryRef()
-            wkt = geometry.ExportToWkt() if geometry else None
+            if geometry:
+                geometry.Transform(coord_transform)
+                wkt = geometry.ExportToWkt()
 
-            # Add node with WKT geometry
+                # Update bounds
+                envelope = geometry.GetEnvelope()
+                min_x = min(min_x, envelope[0])
+                max_x = max(max_x, envelope[1])
+                min_y = min(min_y, envelope[2])
+                max_y = max(max_y, envelope[3])
+            else:
+                wkt = None
+
+            # Add node with reprojected WKT geometry
             G.add_node(state_code, wkt=wkt)
             node_count += 1
 
@@ -49,6 +72,11 @@ def create_graph():
         raise RuntimeError(f"Could not open {lines_url}")
 
     lines_layer = lines_ds.GetLayer()
+
+    # Create coordinate transformation for lines
+    source_srs = lines_layer.GetSpatialRef()
+    coord_transform = osr.CoordinateTransformation(source_srs, target_srs)
+
     edge_count = 0
 
     for feature in lines_layer:
@@ -56,11 +84,22 @@ def create_graph():
         right_state = feature.GetField('RIGHT')
 
         if left_state and right_state and left_state in G and right_state in G:
-            # Get geometry as WKT
+            # Get geometry and reproject
             geometry = feature.GetGeometryRef()
-            wkt = geometry.ExportToWkt() if geometry else None
+            if geometry:
+                geometry.Transform(coord_transform)
+                wkt = geometry.ExportToWkt()
 
-            # Add edge with WKT geometry
+                # Update bounds
+                envelope = geometry.GetEnvelope()
+                min_x = min(min_x, envelope[0])
+                max_x = max(max_x, envelope[1])
+                min_y = min(min_y, envelope[2])
+                max_y = max(max_y, envelope[3])
+            else:
+                wkt = None
+
+            # Add edge with reprojected WKT geometry
             G.add_edge(left_state, right_state, wkt=wkt)
             edge_count += 1
 
@@ -71,6 +110,12 @@ def create_graph():
     print(f"  Nodes: {G.number_of_nodes()}")
     print(f"  Edges: {G.number_of_edges()}")
     print(f"  Connected components: {nx.number_connected_components(G)}")
+    print("  Coordinate system: EPSG:102004 (Lambert Azimuthal Equal Area)")
+    if min_x != float('inf'):
+        print(f"  Data bounds: ({min_x:.0f}, {min_y:.0f}) to ({max_x:.0f}, {max_y:.0f})")
+        width = max_x - min_x
+        height = max_y - min_y
+        print(f"  Data extent: {width:.0f} x {height:.0f} units")
 
     # Show some example nodes
     sample_nodes = list(G.nodes())[:5]
