@@ -11,6 +11,10 @@ import pickle
 from osgeo import ogr, osr
 import networkx as nx
 
+# Enable GDAL/OGR exceptions for better error handling
+ogr.UseExceptions()
+osr.UseExceptions()
+
 
 def create_graph():
     # Remote data sources
