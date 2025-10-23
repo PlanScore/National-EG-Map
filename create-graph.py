@@ -6,40 +6,46 @@ Nodes correspond to state polygons with ISO3166_2 abbreviations as IDs.
 Edges correspond to state boundary lines connecting adjacent states.
 """
 
-import sys
-import pickle
 import math
-from osgeo import ogr, osr
-import networkx as nx
+import pickle
+import sys
+
+import networkx
+import osgeo.ogr
+import osgeo.osr
 
 # Enable GDAL/OGR exceptions for better error handling
-ogr.UseExceptions()
-osr.UseExceptions()
+osgeo.ogr.UseExceptions()
+osgeo.osr.UseExceptions()
 
 
 def translate_geometry(geom, dx, dy):
     """Translate geometry by dx, dy offset."""
     geom_type = geom.GetGeometryType()
-    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
         x, y = geom.GetX(), geom.GetY()
         geom.SetPoint_2D(0, x + dx, y + dy)
-    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+    elif geom_type in [
+        osgeo.ogr.wkbLineString,
+        osgeo.ogr.wkbLineString25D,
+        osgeo.ogr.wkbLinearRing,
+    ]:
         for i in range(geom.GetPointCount()):
             x, y = geom.GetX(i), geom.GetY(i)
             geom.SetPoint_2D(i, x + dx, y + dy)
-    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
         for ring_idx in range(geom.GetGeometryCount()):
             ring = geom.GetGeometryRef(ring_idx)
             translate_geometry(ring, dx, dy)
     elif geom_type in [
-        ogr.wkbMultiPolygon,
-        ogr.wkbMultiPolygon25D,
-        ogr.wkbMultiLineString,
-        ogr.wkbMultiLineString25D,
-        ogr.wkbMultiPoint,
-        ogr.wkbMultiPoint25D,
-        ogr.wkbGeometryCollection,
-        ogr.wkbGeometryCollection25D,
+        osgeo.ogr.wkbMultiPolygon,
+        osgeo.ogr.wkbMultiPolygon25D,
+        osgeo.ogr.wkbMultiLineString,
+        osgeo.ogr.wkbMultiLineString25D,
+        osgeo.ogr.wkbMultiPoint,
+        osgeo.ogr.wkbMultiPoint25D,
+        osgeo.ogr.wkbGeometryCollection,
+        osgeo.ogr.wkbGeometryCollection25D,
     ]:
         for sub_idx in range(geom.GetGeometryCount()):
             sub_geom = geom.GetGeometryRef(sub_idx)
@@ -50,33 +56,37 @@ def rotate_geometry(geom, cx, cy, angle):
     """Rotate geometry around point (cx, cy) by angle in radians."""
     cos_a, sin_a = math.cos(angle), math.sin(angle)
     geom_type = geom.GetGeometryType()
-    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
         x, y = geom.GetX(), geom.GetY()
         # Translate to origin, rotate, translate back
         x_rel, y_rel = x - cx, y - cy
         x_rot = x_rel * cos_a - y_rel * sin_a
         y_rot = x_rel * sin_a + y_rel * cos_a
         geom.SetPoint_2D(0, x_rot + cx, y_rot + cy)
-    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+    elif geom_type in [
+        osgeo.ogr.wkbLineString,
+        osgeo.ogr.wkbLineString25D,
+        osgeo.ogr.wkbLinearRing,
+    ]:
         for i in range(geom.GetPointCount()):
             x, y = geom.GetX(i), geom.GetY(i)
             x_rel, y_rel = x - cx, y - cy
             x_rot = x_rel * cos_a - y_rel * sin_a
             y_rot = x_rel * sin_a + y_rel * cos_a
             geom.SetPoint_2D(i, x_rot + cx, y_rot + cy)
-    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
         for ring_idx in range(geom.GetGeometryCount()):
             ring = geom.GetGeometryRef(ring_idx)
             rotate_geometry(ring, cx, cy, angle)
     elif geom_type in [
-        ogr.wkbMultiPolygon,
-        ogr.wkbMultiPolygon25D,
-        ogr.wkbMultiLineString,
-        ogr.wkbMultiLineString25D,
-        ogr.wkbMultiPoint,
-        ogr.wkbMultiPoint25D,
-        ogr.wkbGeometryCollection,
-        ogr.wkbGeometryCollection25D,
+        osgeo.ogr.wkbMultiPolygon,
+        osgeo.ogr.wkbMultiPolygon25D,
+        osgeo.ogr.wkbMultiLineString,
+        osgeo.ogr.wkbMultiLineString25D,
+        osgeo.ogr.wkbMultiPoint,
+        osgeo.ogr.wkbMultiPoint25D,
+        osgeo.ogr.wkbGeometryCollection,
+        osgeo.ogr.wkbGeometryCollection25D,
     ]:
         for sub_idx in range(geom.GetGeometryCount()):
             sub_geom = geom.GetGeometryRef(sub_idx)
@@ -86,33 +96,37 @@ def rotate_geometry(geom, cx, cy, angle):
 def scale_geometry(geom, cx, cy, scale_factor):
     """Scale geometry around point (cx, cy) by scale_factor."""
     geom_type = geom.GetGeometryType()
-    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
         x, y = geom.GetX(), geom.GetY()
         # Translate to origin, scale, translate back
         x_rel, y_rel = x - cx, y - cy
         x_scaled = x_rel * scale_factor
         y_scaled = y_rel * scale_factor
         geom.SetPoint_2D(0, x_scaled + cx, y_scaled + cy)
-    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+    elif geom_type in [
+        osgeo.ogr.wkbLineString,
+        osgeo.ogr.wkbLineString25D,
+        osgeo.ogr.wkbLinearRing,
+    ]:
         for i in range(geom.GetPointCount()):
             x, y = geom.GetX(i), geom.GetY(i)
             x_rel, y_rel = x - cx, y - cy
             x_scaled = x_rel * scale_factor
             y_scaled = y_rel * scale_factor
             geom.SetPoint_2D(i, x_scaled + cx, y_scaled + cy)
-    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
         for ring_idx in range(geom.GetGeometryCount()):
             ring = geom.GetGeometryRef(ring_idx)
             scale_geometry(ring, cx, cy, scale_factor)
     elif geom_type in [
-        ogr.wkbMultiPolygon,
-        ogr.wkbMultiPolygon25D,
-        ogr.wkbMultiLineString,
-        ogr.wkbMultiLineString25D,
-        ogr.wkbMultiPoint,
-        ogr.wkbMultiPoint25D,
-        ogr.wkbGeometryCollection,
-        ogr.wkbGeometryCollection25D,
+        osgeo.ogr.wkbMultiPolygon,
+        osgeo.ogr.wkbMultiPolygon25D,
+        osgeo.ogr.wkbMultiLineString,
+        osgeo.ogr.wkbMultiLineString25D,
+        osgeo.ogr.wkbMultiPoint,
+        osgeo.ogr.wkbMultiPoint25D,
+        osgeo.ogr.wkbGeometryCollection,
+        osgeo.ogr.wkbGeometryCollection25D,
     ]:
         for sub_idx in range(geom.GetGeometryCount()):
             sub_geom = geom.GetGeometryRef(sub_idx)
@@ -179,13 +193,13 @@ def create_graph():
     }
 
     # Create coordinate transformation to ESRI:102004 (Lambert Azimuthal Equal Area)
-    target_srs = osr.SpatialReference()
+    target_srs = osgeo.osr.SpatialReference()
     target_srs.ImportFromProj4(
         "+proj=laea +lat_0=45 +lon_0=-100 +x_0=0 +y_0=0 +a=6370997 +b=6370997 +units=m +no_defs"
     )
 
     # Create undirected graph
-    G = nx.Graph()
+    G = networkx.Graph()
 
     # Track overall bounds
     min_x, min_y, max_x, max_y = (
@@ -197,7 +211,7 @@ def create_graph():
 
     # Process polygon nodes
     print("Loading polygon data...")
-    polygons_ds = ogr.Open(polygons_url)
+    polygons_ds = osgeo.ogr.Open(polygons_url)
     if not polygons_ds:
         raise RuntimeError(f"Could not open {polygons_url}")
 
@@ -205,7 +219,7 @@ def create_graph():
 
     # Create coordinate transformation for polygons
     source_srs = polygons_layer.GetSpatialRef()
-    coord_transform = osr.CoordinateTransformation(source_srs, target_srs)
+    coord_transform = osgeo.osr.CoordinateTransformation(source_srs, target_srs)
 
     node_count = 0
 
@@ -234,7 +248,7 @@ def create_graph():
                     hawaii_offset_y = target_y - original_y
 
                     # Create a new geometry with translated coordinates
-                    transformed_geometry = ogr.CreateGeometryFromWkt(
+                    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(
                         geometry.ExportToWkt()
                     )
 
@@ -268,7 +282,7 @@ def create_graph():
                     alaska_offset_y = target_y - original_y
 
                     # Create a new geometry with transformed coordinates
-                    transformed_geometry = ogr.CreateGeometryFromWkt(
+                    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(
                         geometry.ExportToWkt()
                     )
 
@@ -325,7 +339,7 @@ def create_graph():
 
     # Process line edges
     print("Loading line data...")
-    lines_ds = ogr.Open(lines_url)
+    lines_ds = osgeo.ogr.Open(lines_url)
     if not lines_ds:
         raise RuntimeError(f"Could not open {lines_url}")
 
@@ -333,7 +347,7 @@ def create_graph():
 
     # Create coordinate transformation for lines
     source_srs = lines_layer.GetSpatialRef()
-    coord_transform = osr.CoordinateTransformation(source_srs, target_srs)
+    coord_transform = osgeo.osr.CoordinateTransformation(source_srs, target_srs)
 
     edge_count = 0
 
@@ -376,7 +390,7 @@ def create_graph():
     print("\nGraph Summary:")
     print(f"  Nodes: {G.number_of_nodes()}")
     print(f"  Edges: {G.number_of_edges()}")
-    print(f"  Connected components: {nx.number_connected_components(G)}")
+    print(f"  Connected components: {networkx.number_connected_components(G)}")
     print("  Coordinate system: ESRI:102004 (Lambert Azimuthal Equal Area)")
     if min_x != float("inf"):
         print(

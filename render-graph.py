@@ -6,17 +6,18 @@ Takes a pickled graph file and renders state polygons as white shapes
 with dark grey borders on a transparent background.
 """
 
-import sys
-import pickle
+import dataclasses
 import math
-from dataclasses import dataclass
-from typing import Tuple, List, Dict, Any
-import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as patches
-from matplotlib.collections import PatchCollection
-from matplotlib.axes import Axes
-from shapely.wkt import loads as wkt_loads
+import pickle
+import sys
+import typing
+
+import matplotlib.axes
+import matplotlib.collections
+import matplotlib.patches
+import matplotlib.pyplot
+import numpy
+import shapely.wkt
 
 # Grid aspect ratio overrides: (width_factor, height_factor)
 # Values < 1.0 make narrower/shorter, > 1.0 make wider/taller
@@ -31,9 +32,9 @@ GRID_ASPECT_OVERRIDES = {
 
 
 def parse_wkt_polygon(wkt):
-    """Parse WKT polygon string and return matplotlib patches."""
+    """Parse WKT polygon string and return matplotlib matplotlib.patches."""
     try:
-        geom = wkt_loads(wkt)
+        geom = shapely.wkt.loads(wkt)
         polygons = []
 
         if geom.geom_type == "Polygon":
@@ -46,7 +47,7 @@ def parse_wkt_polygon(wkt):
             # Get exterior coordinates and round to nearest whole number
             exterior_coords = [(round(x), round(y)) for x, y in poly.exterior.coords]
             if exterior_coords:
-                patch = patches.Polygon(exterior_coords, closed=True)
+                patch = matplotlib.patches.Polygon(exterior_coords, closed=True)
                 patches_list.append(patch)
 
             # Handle holes (interior rings) - round coordinates
@@ -63,7 +64,7 @@ def parse_wkt_polygon(wkt):
         return []
 
 
-@dataclass
+@dataclasses.dataclass
 class StateLabel:
     """Represents a state label with position, text, and rendering properties."""
 
@@ -163,7 +164,7 @@ class StateLabel:
             rows = math.ceil(seats / base_size)
             return (base_size, rows)
 
-    def get_map_dimensions(self, map_width: float) -> Tuple[float, float]:
+    def get_map_dimensions(self, map_width: float) -> tuple[float, float]:
         """Calculate dimensions scaled to map coordinates."""
         char_scale = map_width / 200  # Scale factor for text size vs map
 
@@ -195,7 +196,7 @@ class StateLabel:
 
         return data_width, data_height
 
-    def render_bbox(self, ax: Axes, map_width: float) -> None:
+    def render_bbox(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
         """Render the orange bounding box for this label."""
         data_width, data_height = self.get_map_dimensions(map_width)
 
@@ -210,7 +211,7 @@ class StateLabel:
         bbox_left = label_x - bbox_width // 2
         bbox_bottom = label_y - bbox_height // 2
 
-        bbox_rect = patches.Rectangle(
+        bbox_rect = matplotlib.patches.Rectangle(
             (bbox_left, bbox_bottom),
             bbox_width,
             bbox_height,
@@ -221,7 +222,7 @@ class StateLabel:
         )
         ax.add_patch(bbox_rect)
 
-    def render_text(self, ax: Axes, map_width: float) -> None:
+    def render_text(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
         """Render the text label."""
         # Round coordinates for cleaner SVG output
         label_x = round(self.x)
@@ -253,7 +254,7 @@ class StateLabel:
             fontfamily="monospace",
         )
 
-    def render_seat_dots(self, ax: Axes, map_width: float) -> None:
+    def render_seat_dots(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
         """Render the seat dots grid."""
         if self.seats <= 0:
             return
@@ -296,7 +297,7 @@ class StateLabel:
                 dot_x = grid_start_x + col * (scaled_dot_size + scaled_dot_margin)
                 dot_y = grid_start_y - row * (scaled_dot_size + scaled_dot_margin)
 
-                dot_rect = patches.Rectangle(
+                dot_rect = matplotlib.patches.Rectangle(
                     (dot_x, dot_y),
                     scaled_dot_size,
                     scaled_dot_size,
@@ -311,7 +312,7 @@ class StateLabel:
             if seats_drawn >= self.seats:
                 break
 
-    def to_force_dict(self, map_width: float) -> Dict[str, Any]:
+    def to_force_dict(self, map_width: float) -> dict[str, typing.Any]:
         """Convert to dictionary format for force-directed algorithm."""
         data_width, data_height = self.get_map_dimensions(map_width)
         return {
@@ -377,16 +378,16 @@ def force_directed_label_layout(
     Stops when no overlaps are detected or max iterations reached.
 
     Args:
-        labels: List of dicts with 'text', 'orig_x', 'orig_y', 'x', 'y', 'width', 'height'
+        labels: list of dicts with 'text', 'orig_x', 'orig_y', 'x', 'y', 'width', 'height'
         max_iterations: Maximum number of iterations
         k_attract: Attraction force constant (toward original position)
         k_repel: Repulsion force constant (away from overlapping labels)
     """
-    positions = np.array([[label["x"], label["y"]] for label in labels])
-    # orig_positions = np.array([[label['orig_x'], label['orig_y']] for label in labels])  # Unused while attraction disabled
+    positions = numpy.array([[label["x"], label["y"]] for label in labels])
+    # orig_positions = numpy.array([[label['orig_x'], label['orig_y']] for label in labels])  # Unused while attraction disabled
 
     for iteration in range(max_iterations):
-        forces = np.zeros_like(positions)
+        forces = numpy.zeros_like(positions)
 
         # Temporarily disable attraction force to debug repulsion
         # attract_force = k_attract * (orig_positions - positions)
@@ -421,7 +422,7 @@ def force_directed_label_layout(
                     if abs(dy) < 1:
                         dy = 1 if dy >= 0 else -1
 
-                    distance = max(np.sqrt(dx**2 + dy**2), 1)
+                    distance = max(numpy.sqrt(dx**2 + dy**2), 1)
                     unit_dx = dx / distance
                     unit_dy = dy / distance
 
@@ -457,15 +458,15 @@ def force_directed_label_layout(
         positions += forces * damping * movement_scale
 
         # Check how much things moved
-        movement = np.sqrt(np.sum((positions - old_positions) ** 2, axis=1))
-        max_movement = np.max(movement)
-        avg_movement = np.mean(movement)
+        movement = numpy.sqrt(numpy.sum((positions - old_positions) ** 2, axis=1))
+        max_movement = numpy.max(movement)
+        avg_movement = numpy.mean(movement)
         print(f"  Max movement: {max_movement:.1f}, Avg movement: {avg_movement:.1f}")
 
         # Also check force magnitudes
-        force_magnitudes = np.sqrt(np.sum(forces**2, axis=1))
-        max_force = np.max(force_magnitudes)
-        avg_force = np.mean(force_magnitudes)
+        force_magnitudes = numpy.sqrt(numpy.sum(forces**2, axis=1))
+        max_force = numpy.max(force_magnitudes)
+        avg_force = numpy.mean(force_magnitudes)
         print(f"  Max force: {max_force:.1f}, Avg force: {avg_force:.1f}")
 
         # Check if we've resolved all overlaps
@@ -492,7 +493,7 @@ def render_graph(graph_file, output_file):
 
     # Set up the plot with specified dimensions (962px width)
     # Calculate height to maintain aspect ratio while ensuring 962px width
-    fig, ax = plt.subplots(figsize=(9.62, 4.0))
+    fig, ax = matplotlib.pyplot.subplots(figsize=(9.62, 4.0))
     ax.set_aspect("equal")
 
     # Remove axes and make background transparent
@@ -512,7 +513,7 @@ def render_graph(graph_file, output_file):
 
     # Create patch collection
     if all_patches:
-        collection = PatchCollection(
+        collection = matplotlib.collections.PatchCollection(
             all_patches,
             facecolor="white",
             edgecolor="#333333",  # dark grey
@@ -529,7 +530,7 @@ def render_graph(graph_file, output_file):
     map_width = map_bounds[0][1] - map_bounds[0][0]
 
     # Prepare labels for force-directed positioning
-    state_labels: List[StateLabel] = []
+    state_labels: list[StateLabel] = []
     for state_code, data in G.nodes(data=True):
         x = data.get("x")
         y = data.get("y")
@@ -553,7 +554,7 @@ def render_graph(graph_file, output_file):
         )
 
     # Convert StateLabels to force dict format for the algorithm
-    force_labels: List[Dict[str, Any]] = [
+    force_labels: list[dict[str, typing.Any]] = [
         label.to_force_dict(map_width) for label in state_labels
     ]
 
@@ -584,7 +585,7 @@ def render_graph(graph_file, output_file):
     # Save as SVG with specific DPI to achieve 962px width
     # figsize 9.62 inches * 100 DPI = 962 pixels width
     print(f"Saving to {output_file}...")
-    plt.savefig(
+    matplotlib.pyplot.savefig(
         output_file,
         format="svg",
         transparent=True,
@@ -592,7 +593,7 @@ def render_graph(graph_file, output_file):
         pad_inches=0,
         dpi=100,
     )
-    plt.close()
+    matplotlib.pyplot.close()
 
     # Post-process SVG to set exact width of 962px
     print("Post-processing SVG to set width to 962px...")
