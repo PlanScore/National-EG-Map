@@ -55,6 +55,91 @@ def scale_geometry(
     return osgeo.ogr.CreateGeometryFromWkt(scaled.wkt)
 
 
+def get_largest_polygon_centroid(geometry: osgeo.ogr.Geometry) -> osgeo.ogr.Geometry:
+    """Get centroid of the largest polygon in a multipolygon, or regular centroid for simple geometries."""
+    if geometry.GetGeometryType() == osgeo.ogr.wkbMultiPolygon:
+        largest_area = 0
+        largest_polygon = None
+
+        for i in range(geometry.GetGeometryCount()):
+            polygon = geometry.GetGeometryRef(i)
+            area = polygon.GetArea()
+            if area > largest_area:
+                largest_area = area
+                largest_polygon = polygon
+
+        if largest_polygon:
+            return largest_polygon.Centroid()
+
+    # For non-multipolygon geometries, return regular centroid
+    return geometry.Centroid()
+
+
+def transform_hawaii_geometry(geometry: osgeo.ogr.Geometry) -> osgeo.ogr.Geometry:
+    """Transform Hawaii geometry: move 100km east and 100km south from (-710000, -1910000) then rotate 40° CCW."""
+    original_centroid = geometry.Centroid()
+    original_x, original_y = original_centroid.GetX(), original_centroid.GetY()
+
+    # Move 100km east (+100000m) and 100km south (-100000m) from previous position
+    target_x, target_y = -710000 + 100000, -1910000 - 100000
+    hawaii_offset_x = target_x - original_x
+    hawaii_offset_y = target_y - original_y
+
+    # Create a new geometry with translated coordinates
+    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(geometry.ExportToWkt())
+
+    # Apply translation
+    transformed_geometry = translate_geometry(
+        transformed_geometry, hawaii_offset_x, hawaii_offset_y
+    )
+
+    # Rotate Hawaii 40 degrees counterclockwise around its centroid
+    rotation_angle = math.radians(40)  # 40 degrees CCW
+    translated_centroid = transformed_geometry.Centroid()
+    center_x, center_y = translated_centroid.GetX(), translated_centroid.GetY()
+    transformed_geometry = rotate_geometry(
+        transformed_geometry, center_x, center_y, rotation_angle
+    )
+
+    return transformed_geometry
+
+
+def transform_alaska_geometry(geometry: osgeo.ogr.Geometry) -> osgeo.ogr.Geometry:
+    """Transform Alaska geometry: move 100km south from (-1590190, -1734924), scale to 35%, then rotate 30° CCW."""
+    original_centroid = geometry.Centroid()
+    original_x, original_y = original_centroid.GetX(), original_centroid.GetY()
+
+    # Move 100km south (-100000m) from previous position
+    target_x, target_y = -1590190, -1734924 - 100000
+    alaska_offset_x = target_x - original_x
+    alaska_offset_y = target_y - original_y
+
+    # Create a new geometry with transformed coordinates
+    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(geometry.ExportToWkt())
+
+    # Apply translation first
+    transformed_geometry = translate_geometry(
+        transformed_geometry, alaska_offset_x, alaska_offset_y
+    )
+
+    # Scale Alaska to 35% around its new centroid
+    translated_centroid = transformed_geometry.Centroid()
+    center_x, center_y = translated_centroid.GetX(), translated_centroid.GetY()
+    transformed_geometry = scale_geometry(
+        transformed_geometry, center_x, center_y, 0.35
+    )
+
+    # Rotate Alaska 30 degrees counterclockwise around its centroid
+    rotation_angle = math.radians(30)  # 30 degrees CCW
+    scaled_centroid = transformed_geometry.Centroid()
+    center_x, center_y = scaled_centroid.GetX(), scaled_centroid.GetY()
+    transformed_geometry = rotate_geometry(
+        transformed_geometry, center_x, center_y, rotation_angle
+    )
+
+    return transformed_geometry
+
+
 def create_graph():
     # Remote data sources
     polygons_url = "/vsizip/vsicurl/https://giscollective.s3.amazonaws.com/projectlinework/times-approximate.zip/shp/Admin1_Polygons.shp"
@@ -158,86 +243,16 @@ def create_graph():
 
                 # Apply transformations for Hawaii and Alaska
                 if state_code == "HI":
-                    # Translation and rotation for Hawaii: move 100km east and 100km south from (-710000, -1910000) then rotate 40° CCW
-                    original_centroid = geometry.Centroid()
-                    original_x, original_y = (
-                        original_centroid.GetX(),
-                        original_centroid.GetY(),
-                    )
-                    # Move 100km east (+100000m) and 100km south (-100000m) from previous position
-                    target_x, target_y = -710000 + 100000, -1910000 - 100000
-                    hawaii_offset_x = target_x - original_x
-                    hawaii_offset_y = target_y - original_y
-
-                    # Create a new geometry with translated coordinates
-                    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(
-                        geometry.ExportToWkt()
-                    )
-
-                    # Apply translation
-                    transformed_geometry = translate_geometry(
-                        transformed_geometry, hawaii_offset_x, hawaii_offset_y
-                    )
-
-                    # Rotate Hawaii 40 degrees counterclockwise around its centroid
-                    rotation_angle = math.radians(40)  # 40 degrees CCW
-                    translated_centroid = transformed_geometry.Centroid()
-                    center_x, center_y = (
-                        translated_centroid.GetX(),
-                        translated_centroid.GetY(),
-                    )
-                    transformed_geometry = rotate_geometry(
-                        transformed_geometry, center_x, center_y, rotation_angle
-                    )
-                    geometry = transformed_geometry
-
+                    geometry = transform_hawaii_geometry(geometry)
                 elif state_code == "AK":
-                    # Translation, scaling, and rotation for Alaska: move 100km south from (-1590190, -1734924), scale to 50%, then rotate 30° CCW
-                    original_centroid = geometry.Centroid()
-                    original_x, original_y = (
-                        original_centroid.GetX(),
-                        original_centroid.GetY(),
-                    )
-                    # Move 100km south (-100000m) from previous position
-                    target_x, target_y = -1590190, -1734924 - 100000
-                    alaska_offset_x = target_x - original_x
-                    alaska_offset_y = target_y - original_y
-
-                    # Create a new geometry with transformed coordinates
-                    transformed_geometry = osgeo.ogr.CreateGeometryFromWkt(
-                        geometry.ExportToWkt()
-                    )
-
-                    # Apply translation first
-                    transformed_geometry = translate_geometry(
-                        transformed_geometry, alaska_offset_x, alaska_offset_y
-                    )
-
-                    # Scale Alaska to 35% around its new centroid
-                    translated_centroid = transformed_geometry.Centroid()
-                    center_x, center_y = (
-                        translated_centroid.GetX(),
-                        translated_centroid.GetY(),
-                    )
-                    transformed_geometry = scale_geometry(
-                        transformed_geometry, center_x, center_y, 0.35
-                    )
-
-                    # Rotate Alaska 30 degrees counterclockwise around its centroid
-                    rotation_angle = math.radians(30)  # 30 degrees CCW
-                    scaled_centroid = transformed_geometry.Centroid()
-                    center_x, center_y = scaled_centroid.GetX(), scaled_centroid.GetY()
-                    transformed_geometry = rotate_geometry(
-                        transformed_geometry, center_x, center_y, rotation_angle
-                    )
-                    geometry = transformed_geometry
+                    geometry = transform_alaska_geometry(geometry)
 
                 # Simplify geometry with 1000 map unit threshold after projection (1km)
                 simplified_geometry = geometry.Simplify(1000.0)
                 wkt = simplified_geometry.ExportToWkt()
 
-                # Calculate centroid from simplified geometry
-                centroid = simplified_geometry.Centroid()
+                # Calculate centroid from simplified geometry (use largest polygon for multipolygons)
+                centroid = get_largest_polygon_centroid(simplified_geometry)
                 center_x = centroid.GetX()
                 center_y = centroid.GetY()
 
