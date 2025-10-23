@@ -13,124 +13,46 @@ import sys
 import networkx
 import osgeo.ogr
 import osgeo.osr
+import shapely.affinity
+import shapely.wkt
 
 # Enable GDAL/OGR exceptions for better error handling
 osgeo.ogr.UseExceptions()
 osgeo.osr.UseExceptions()
 
 
-def translate_geometry(geom, dx, dy):
-    """Translate geometry by dx, dy offset."""
-    geom_type = geom.GetGeometryType()
-    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
-        x, y = geom.GetX(), geom.GetY()
-        geom.SetPoint_2D(0, x + dx, y + dy)
-    elif geom_type in [
-        osgeo.ogr.wkbLineString,
-        osgeo.ogr.wkbLineString25D,
-        osgeo.ogr.wkbLinearRing,
-    ]:
-        for i in range(geom.GetPointCount()):
-            x, y = geom.GetX(i), geom.GetY(i)
-            geom.SetPoint_2D(i, x + dx, y + dy)
-    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
-        for ring_idx in range(geom.GetGeometryCount()):
-            ring = geom.GetGeometryRef(ring_idx)
-            translate_geometry(ring, dx, dy)
-    elif geom_type in [
-        osgeo.ogr.wkbMultiPolygon,
-        osgeo.ogr.wkbMultiPolygon25D,
-        osgeo.ogr.wkbMultiLineString,
-        osgeo.ogr.wkbMultiLineString25D,
-        osgeo.ogr.wkbMultiPoint,
-        osgeo.ogr.wkbMultiPoint25D,
-        osgeo.ogr.wkbGeometryCollection,
-        osgeo.ogr.wkbGeometryCollection25D,
-    ]:
-        for sub_idx in range(geom.GetGeometryCount()):
-            sub_geom = geom.GetGeometryRef(sub_idx)
-            translate_geometry(sub_geom, dx, dy)
+def translate_geometry(
+    geom: osgeo.ogr.Geometry, dx: float, dy: float
+) -> osgeo.ogr.Geometry:
+    """Translate geometry by dx, dy offset using shapely."""
+    wkt = geom.ExportToWkt()
+    shapely_geom = shapely.wkt.loads(wkt)
+    translated = shapely.affinity.translate(shapely_geom, xoff=dx, yoff=dy)
+    return osgeo.ogr.CreateGeometryFromWkt(translated.wkt)
 
 
-def rotate_geometry(geom, cx, cy, angle):
-    """Rotate geometry around point (cx, cy) by angle in radians."""
-    cos_a, sin_a = math.cos(angle), math.sin(angle)
-    geom_type = geom.GetGeometryType()
-    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
-        x, y = geom.GetX(), geom.GetY()
-        # Translate to origin, rotate, translate back
-        x_rel, y_rel = x - cx, y - cy
-        x_rot = x_rel * cos_a - y_rel * sin_a
-        y_rot = x_rel * sin_a + y_rel * cos_a
-        geom.SetPoint_2D(0, x_rot + cx, y_rot + cy)
-    elif geom_type in [
-        osgeo.ogr.wkbLineString,
-        osgeo.ogr.wkbLineString25D,
-        osgeo.ogr.wkbLinearRing,
-    ]:
-        for i in range(geom.GetPointCount()):
-            x, y = geom.GetX(i), geom.GetY(i)
-            x_rel, y_rel = x - cx, y - cy
-            x_rot = x_rel * cos_a - y_rel * sin_a
-            y_rot = x_rel * sin_a + y_rel * cos_a
-            geom.SetPoint_2D(i, x_rot + cx, y_rot + cy)
-    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
-        for ring_idx in range(geom.GetGeometryCount()):
-            ring = geom.GetGeometryRef(ring_idx)
-            rotate_geometry(ring, cx, cy, angle)
-    elif geom_type in [
-        osgeo.ogr.wkbMultiPolygon,
-        osgeo.ogr.wkbMultiPolygon25D,
-        osgeo.ogr.wkbMultiLineString,
-        osgeo.ogr.wkbMultiLineString25D,
-        osgeo.ogr.wkbMultiPoint,
-        osgeo.ogr.wkbMultiPoint25D,
-        osgeo.ogr.wkbGeometryCollection,
-        osgeo.ogr.wkbGeometryCollection25D,
-    ]:
-        for sub_idx in range(geom.GetGeometryCount()):
-            sub_geom = geom.GetGeometryRef(sub_idx)
-            rotate_geometry(sub_geom, cx, cy, angle)
+def rotate_geometry(
+    geom: osgeo.ogr.Geometry, cx: float, cy: float, angle: float
+) -> osgeo.ogr.Geometry:
+    """Rotate geometry around point (cx, cy) by angle in radians using shapely."""
+    wkt = geom.ExportToWkt()
+    shapely_geom = shapely.wkt.loads(wkt)
+    # Convert radians to degrees for shapely
+    angle_degrees = math.degrees(angle)
+    rotated = shapely.affinity.rotate(shapely_geom, angle_degrees, origin=(cx, cy))
+    return osgeo.ogr.CreateGeometryFromWkt(rotated.wkt)
 
 
-def scale_geometry(geom, cx, cy, scale_factor):
-    """Scale geometry around point (cx, cy) by scale_factor."""
-    geom_type = geom.GetGeometryType()
-    if geom_type in [osgeo.ogr.wkbPoint, osgeo.ogr.wkbPoint25D]:
-        x, y = geom.GetX(), geom.GetY()
-        # Translate to origin, scale, translate back
-        x_rel, y_rel = x - cx, y - cy
-        x_scaled = x_rel * scale_factor
-        y_scaled = y_rel * scale_factor
-        geom.SetPoint_2D(0, x_scaled + cx, y_scaled + cy)
-    elif geom_type in [
-        osgeo.ogr.wkbLineString,
-        osgeo.ogr.wkbLineString25D,
-        osgeo.ogr.wkbLinearRing,
-    ]:
-        for i in range(geom.GetPointCount()):
-            x, y = geom.GetX(i), geom.GetY(i)
-            x_rel, y_rel = x - cx, y - cy
-            x_scaled = x_rel * scale_factor
-            y_scaled = y_rel * scale_factor
-            geom.SetPoint_2D(i, x_scaled + cx, y_scaled + cy)
-    elif geom_type in [osgeo.ogr.wkbPolygon, osgeo.ogr.wkbPolygon25D]:
-        for ring_idx in range(geom.GetGeometryCount()):
-            ring = geom.GetGeometryRef(ring_idx)
-            scale_geometry(ring, cx, cy, scale_factor)
-    elif geom_type in [
-        osgeo.ogr.wkbMultiPolygon,
-        osgeo.ogr.wkbMultiPolygon25D,
-        osgeo.ogr.wkbMultiLineString,
-        osgeo.ogr.wkbMultiLineString25D,
-        osgeo.ogr.wkbMultiPoint,
-        osgeo.ogr.wkbMultiPoint25D,
-        osgeo.ogr.wkbGeometryCollection,
-        osgeo.ogr.wkbGeometryCollection25D,
-    ]:
-        for sub_idx in range(geom.GetGeometryCount()):
-            sub_geom = geom.GetGeometryRef(sub_idx)
-            scale_geometry(sub_geom, cx, cy, scale_factor)
+def scale_geometry(
+    geom: osgeo.ogr.Geometry, cx: float, cy: float, scale_factor: float
+) -> osgeo.ogr.Geometry:
+    """Scale geometry around point (cx, cy) by scale_factor using shapely."""
+    wkt = geom.ExportToWkt()
+    shapely_geom = shapely.wkt.loads(wkt)
+    scaled = shapely.affinity.scale(
+        shapely_geom, xfact=scale_factor, yfact=scale_factor, origin=(cx, cy)
+    )
+    return osgeo.ogr.CreateGeometryFromWkt(scaled.wkt)
 
 
 def create_graph():
@@ -253,7 +175,7 @@ def create_graph():
                     )
 
                     # Apply translation
-                    translate_geometry(
+                    transformed_geometry = translate_geometry(
                         transformed_geometry, hawaii_offset_x, hawaii_offset_y
                     )
 
@@ -264,7 +186,7 @@ def create_graph():
                         translated_centroid.GetX(),
                         translated_centroid.GetY(),
                     )
-                    rotate_geometry(
+                    transformed_geometry = rotate_geometry(
                         transformed_geometry, center_x, center_y, rotation_angle
                     )
                     geometry = transformed_geometry
@@ -287,7 +209,7 @@ def create_graph():
                     )
 
                     # Apply translation first
-                    translate_geometry(
+                    transformed_geometry = translate_geometry(
                         transformed_geometry, alaska_offset_x, alaska_offset_y
                     )
 
@@ -297,13 +219,15 @@ def create_graph():
                         translated_centroid.GetX(),
                         translated_centroid.GetY(),
                     )
-                    scale_geometry(transformed_geometry, center_x, center_y, 0.35)
+                    transformed_geometry = scale_geometry(
+                        transformed_geometry, center_x, center_y, 0.35
+                    )
 
                     # Rotate Alaska 30 degrees counterclockwise around its centroid
                     rotation_angle = math.radians(30)  # 30 degrees CCW
                     scaled_centroid = transformed_geometry.Centroid()
                     center_x, center_y = scaled_centroid.GetX(), scaled_centroid.GetY()
-                    rotate_geometry(
+                    transformed_geometry = rotate_geometry(
                         transformed_geometry, center_x, center_y, rotation_angle
                     )
                     geometry = transformed_geometry
