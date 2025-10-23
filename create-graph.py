@@ -8,12 +8,115 @@ Edges correspond to state boundary lines connecting adjacent states.
 
 import sys
 import pickle
+import math
 from osgeo import ogr, osr
 import networkx as nx
 
 # Enable GDAL/OGR exceptions for better error handling
 ogr.UseExceptions()
 osr.UseExceptions()
+
+
+def translate_geometry(geom, dx, dy):
+    """Translate geometry by dx, dy offset."""
+    geom_type = geom.GetGeometryType()
+    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+        x, y = geom.GetX(), geom.GetY()
+        geom.SetPoint_2D(0, x + dx, y + dy)
+    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+        for i in range(geom.GetPointCount()):
+            x, y = geom.GetX(i), geom.GetY(i)
+            geom.SetPoint_2D(i, x + dx, y + dy)
+    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+        for ring_idx in range(geom.GetGeometryCount()):
+            ring = geom.GetGeometryRef(ring_idx)
+            translate_geometry(ring, dx, dy)
+    elif geom_type in [
+        ogr.wkbMultiPolygon,
+        ogr.wkbMultiPolygon25D,
+        ogr.wkbMultiLineString,
+        ogr.wkbMultiLineString25D,
+        ogr.wkbMultiPoint,
+        ogr.wkbMultiPoint25D,
+        ogr.wkbGeometryCollection,
+        ogr.wkbGeometryCollection25D,
+    ]:
+        for sub_idx in range(geom.GetGeometryCount()):
+            sub_geom = geom.GetGeometryRef(sub_idx)
+            translate_geometry(sub_geom, dx, dy)
+
+
+def rotate_geometry(geom, cx, cy, angle):
+    """Rotate geometry around point (cx, cy) by angle in radians."""
+    cos_a, sin_a = math.cos(angle), math.sin(angle)
+    geom_type = geom.GetGeometryType()
+    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+        x, y = geom.GetX(), geom.GetY()
+        # Translate to origin, rotate, translate back
+        x_rel, y_rel = x - cx, y - cy
+        x_rot = x_rel * cos_a - y_rel * sin_a
+        y_rot = x_rel * sin_a + y_rel * cos_a
+        geom.SetPoint_2D(0, x_rot + cx, y_rot + cy)
+    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+        for i in range(geom.GetPointCount()):
+            x, y = geom.GetX(i), geom.GetY(i)
+            x_rel, y_rel = x - cx, y - cy
+            x_rot = x_rel * cos_a - y_rel * sin_a
+            y_rot = x_rel * sin_a + y_rel * cos_a
+            geom.SetPoint_2D(i, x_rot + cx, y_rot + cy)
+    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+        for ring_idx in range(geom.GetGeometryCount()):
+            ring = geom.GetGeometryRef(ring_idx)
+            rotate_geometry(ring, cx, cy, angle)
+    elif geom_type in [
+        ogr.wkbMultiPolygon,
+        ogr.wkbMultiPolygon25D,
+        ogr.wkbMultiLineString,
+        ogr.wkbMultiLineString25D,
+        ogr.wkbMultiPoint,
+        ogr.wkbMultiPoint25D,
+        ogr.wkbGeometryCollection,
+        ogr.wkbGeometryCollection25D,
+    ]:
+        for sub_idx in range(geom.GetGeometryCount()):
+            sub_geom = geom.GetGeometryRef(sub_idx)
+            rotate_geometry(sub_geom, cx, cy, angle)
+
+
+def scale_geometry(geom, cx, cy, scale_factor):
+    """Scale geometry around point (cx, cy) by scale_factor."""
+    geom_type = geom.GetGeometryType()
+    if geom_type in [ogr.wkbPoint, ogr.wkbPoint25D]:
+        x, y = geom.GetX(), geom.GetY()
+        # Translate to origin, scale, translate back
+        x_rel, y_rel = x - cx, y - cy
+        x_scaled = x_rel * scale_factor
+        y_scaled = y_rel * scale_factor
+        geom.SetPoint_2D(0, x_scaled + cx, y_scaled + cy)
+    elif geom_type in [ogr.wkbLineString, ogr.wkbLineString25D, ogr.wkbLinearRing]:
+        for i in range(geom.GetPointCount()):
+            x, y = geom.GetX(i), geom.GetY(i)
+            x_rel, y_rel = x - cx, y - cy
+            x_scaled = x_rel * scale_factor
+            y_scaled = y_rel * scale_factor
+            geom.SetPoint_2D(i, x_scaled + cx, y_scaled + cy)
+    elif geom_type in [ogr.wkbPolygon, ogr.wkbPolygon25D]:
+        for ring_idx in range(geom.GetGeometryCount()):
+            ring = geom.GetGeometryRef(ring_idx)
+            scale_geometry(ring, cx, cy, scale_factor)
+    elif geom_type in [
+        ogr.wkbMultiPolygon,
+        ogr.wkbMultiPolygon25D,
+        ogr.wkbMultiLineString,
+        ogr.wkbMultiLineString25D,
+        ogr.wkbMultiPoint,
+        ogr.wkbMultiPoint25D,
+        ogr.wkbGeometryCollection,
+        ogr.wkbGeometryCollection25D,
+    ]:
+        for sub_idx in range(geom.GetGeometryCount()):
+            sub_geom = geom.GetGeometryRef(sub_idx)
+            scale_geometry(sub_geom, cx, cy, scale_factor)
 
 
 def create_graph():
@@ -106,13 +209,91 @@ def create_graph():
 
     node_count = 0
 
+    # States to exclude (only PR now, since we're repositioning both HI and AK)
+    excluded_states = {"PR"}
+
     for feature in polygons_layer:
         state_code = feature.GetField("ISO3166_2")
-        if state_code:
+        if state_code and state_code not in excluded_states:
             # Get geometry and reproject
             geometry = feature.GetGeometryRef()
             if geometry:
                 geometry.Transform(coord_transform)
+
+                # Apply transformations for Hawaii and Alaska
+                if state_code == "HI":
+                    # Translation and rotation for Hawaii: move 100km east and 100km south from (-710000, -1910000) then rotate 40° CCW
+                    original_centroid = geometry.Centroid()
+                    original_x, original_y = (
+                        original_centroid.GetX(),
+                        original_centroid.GetY(),
+                    )
+                    # Move 100km east (+100000m) and 100km south (-100000m) from previous position
+                    target_x, target_y = -710000 + 100000, -1910000 - 100000
+                    hawaii_offset_x = target_x - original_x
+                    hawaii_offset_y = target_y - original_y
+
+                    # Create a new geometry with translated coordinates
+                    transformed_geometry = ogr.CreateGeometryFromWkt(
+                        geometry.ExportToWkt()
+                    )
+
+                    # Apply translation
+                    translate_geometry(
+                        transformed_geometry, hawaii_offset_x, hawaii_offset_y
+                    )
+
+                    # Rotate Hawaii 40 degrees counterclockwise around its centroid
+                    rotation_angle = math.radians(40)  # 40 degrees CCW
+                    translated_centroid = transformed_geometry.Centroid()
+                    center_x, center_y = (
+                        translated_centroid.GetX(),
+                        translated_centroid.GetY(),
+                    )
+                    rotate_geometry(
+                        transformed_geometry, center_x, center_y, rotation_angle
+                    )
+                    geometry = transformed_geometry
+
+                elif state_code == "AK":
+                    # Translation, scaling, and rotation for Alaska: move 100km south from (-1590190, -1734924), scale to 50%, then rotate 30° CCW
+                    original_centroid = geometry.Centroid()
+                    original_x, original_y = (
+                        original_centroid.GetX(),
+                        original_centroid.GetY(),
+                    )
+                    # Move 100km south (-100000m) from previous position
+                    target_x, target_y = -1590190, -1734924 - 100000
+                    alaska_offset_x = target_x - original_x
+                    alaska_offset_y = target_y - original_y
+
+                    # Create a new geometry with transformed coordinates
+                    transformed_geometry = ogr.CreateGeometryFromWkt(
+                        geometry.ExportToWkt()
+                    )
+
+                    # Apply translation first
+                    translate_geometry(
+                        transformed_geometry, alaska_offset_x, alaska_offset_y
+                    )
+
+                    # Scale Alaska to 35% around its new centroid
+                    translated_centroid = transformed_geometry.Centroid()
+                    center_x, center_y = (
+                        translated_centroid.GetX(),
+                        translated_centroid.GetY(),
+                    )
+                    scale_geometry(transformed_geometry, center_x, center_y, 0.35)
+
+                    # Rotate Alaska 30 degrees counterclockwise around its centroid
+                    rotation_angle = math.radians(30)  # 30 degrees CCW
+                    scaled_centroid = transformed_geometry.Centroid()
+                    center_x, center_y = scaled_centroid.GetX(), scaled_centroid.GetY()
+                    rotate_geometry(
+                        transformed_geometry, center_x, center_y, rotation_angle
+                    )
+                    geometry = transformed_geometry
+
                 # Simplify geometry with 1000 map unit threshold after projection (1km)
                 simplified_geometry = geometry.Simplify(1000.0)
                 wkt = simplified_geometry.ExportToWkt()
@@ -160,7 +341,14 @@ def create_graph():
         left_state = feature.GetField("LEFT")
         right_state = feature.GetField("RIGHT")
 
-        if left_state and right_state and left_state in G and right_state in G:
+        if (
+            left_state
+            and right_state
+            and left_state not in excluded_states
+            and right_state not in excluded_states
+            and left_state in G
+            and right_state in G
+        ):
             # Get geometry and reproject
             geometry = feature.GetGeometryRef()
             if geometry:

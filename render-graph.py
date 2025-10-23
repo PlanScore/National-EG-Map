@@ -488,8 +488,9 @@ def render_graph(graph_file, output_file):
 
     print(f"Loaded graph with {G.number_of_nodes()} nodes")
 
-    # Set up the plot
-    fig, ax = plt.subplots(figsize=(16, 10))
+    # Set up the plot with specified dimensions (962px width)
+    # Calculate height to maintain aspect ratio while ensuring 962px width
+    fig, ax = plt.subplots(figsize=(9.62, 4.0))
     ax.set_aspect("equal")
 
     # Remove axes and make background transparent
@@ -578,12 +579,50 @@ def render_graph(graph_file, output_file):
         ax.set_xlim(round(xlim[0]), round(xlim[1]))
         ax.set_ylim(round(ylim[0]), round(ylim[1]))
 
-    # Save as SVG
+    # Save as SVG with specific DPI to achieve 962px width
+    # figsize 9.62 inches * 100 DPI = 962 pixels width
     print(f"Saving to {output_file}...")
     plt.savefig(
-        output_file, format="svg", transparent=True, bbox_inches="tight", pad_inches=0.1
+        output_file,
+        format="svg",
+        transparent=True,
+        bbox_inches="tight",
+        pad_inches=0,
+        dpi=100,
     )
     plt.close()
+
+    # Post-process SVG to set exact width of 962px
+    print("Post-processing SVG to set width to 962px...")
+    import re
+
+    with open(output_file, "r") as f:
+        svg_content = f.read()
+
+    # Extract current width and height in points
+    width_match = re.search(r'width="([0-9.]+)pt"', svg_content)
+    height_match = re.search(r'height="([0-9.]+)pt"', svg_content)
+
+    if width_match and height_match:
+        current_width_pt = float(width_match.group(1))
+        current_height_pt = float(height_match.group(1))
+
+        # Calculate height to maintain aspect ratio with 962px width
+        aspect_ratio = current_height_pt / current_width_pt
+        new_height_px = int(962 * aspect_ratio)
+
+        # Replace width and height with pixel values
+        svg_content = re.sub(r'width="[0-9.]+pt"', 'width="962px"', svg_content)
+        svg_content = re.sub(
+            r'height="[0-9.]+pt"', f'height="{new_height_px}px"', svg_content
+        )
+
+        with open(output_file, "w") as f:
+            f.write(svg_content)
+
+        print(f"SVG dimensions updated to 962x{new_height_px} pixels")
+    else:
+        print("Could not find width/height in SVG to modify")
 
     print(f"SVG saved successfully to {output_file}")
 
