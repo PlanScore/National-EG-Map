@@ -96,8 +96,8 @@ class StateLabel:
         """Calculate label dimensions based on text, font size, and seat dots grid."""
         # More generous approximation for bold monospace text
         char_width = (
-            self._fontsize * 1.5
-        )  # pixels per character (bold monospace is quite wide)
+            self._fontsize * 3.0
+        )  # pixels per character (increased by 50% more to ensure proper text coverage)
         char_height = self._fontsize * 1.0  # line height closer to actual font size
 
         lines = self.text.split("\n")
@@ -109,8 +109,8 @@ class StateLabel:
 
         # Calculate seat dots grid dimensions
         grid_cols, grid_rows = self._calculate_grid_dimensions(self.seats)
-        dot_size = 8  # 8px rectangles
-        dot_margin = 2  # 2px margins
+        dot_size = 16  # 16px rectangles (doubled from 8px)
+        dot_margin = 4  # 4px margins (doubled from 2px)
 
         if grid_cols > 0 and grid_rows > 0:
             grid_width = grid_cols * dot_size + (grid_cols - 1) * dot_margin
@@ -120,7 +120,9 @@ class StateLabel:
             grid_height = 0
 
         # Add spacing between text and grid
-        padding = 16 if grid_height > 0 else 0  # Only add padding if there's a grid
+        padding = (
+            44 if grid_height > 0 else 0
+        )  # Maximum padding to completely eliminate overlap
 
         # Layout: text on top, grid below, left-aligned
         self.width = max(text_width, grid_width)
@@ -258,8 +260,8 @@ class StateLabel:
 
         # Grid parameters
         grid_cols, grid_rows = self._calculate_grid_dimensions(self.seats)
-        dot_size = 8  # pixels
-        dot_margin = 2  # pixels
+        dot_size = 16  # pixels (doubled from 8px)
+        dot_margin = 4  # pixels (doubled from 2px)
 
         # Scale to map coordinates
         char_scale = map_width / 200
@@ -271,9 +273,9 @@ class StateLabel:
         label_y = round(self.y)
         data_width, data_height = self.get_map_dimensions(map_width)
 
-        # Calculate grid positioning - left-aligned, below text with 16px spacing
+        # Calculate grid positioning - left-aligned, below text with maximum spacing
         text_height = self._fontsize * 1.0 * char_scale / 10
-        padding = 16 * char_scale / 10
+        padding = 44 * char_scale / 10
 
         # Calculate 4px margin in map coordinates
         margin_4px = 4 * char_scale / 10
