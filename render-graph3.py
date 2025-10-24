@@ -121,35 +121,15 @@ class StateLabel:
         text_width = max_line_length * char_width
         text_height = char_height * num_lines
 
-        # Calculate arrow dimensions
-        if self.seats > 0:
-            base_size = 14  # pixels for 1 seat (reduced from 28 to make arrows smaller)
-            arrow_size = base_size * math.sqrt(self.seats)
-            arrow_width = arrow_size
-            arrow_height = arrow_size
-        else:
-            arrow_width = 0
-            arrow_height = 0
-
-        # Add spacing between text and arrow
-        padding = 20 if arrow_height > 0 else 0  # Less padding than grid
-
-        # Layout: text on top, arrow below, centered
-        self.width = max(text_width, arrow_width)
-        self.height = text_height + padding + arrow_height
+        # No arrows - just text dimensions with extra height for better coverage
+        self.width = text_width
+        self.height = text_height * 4.05  # Make bbox 10% taller (3.68 * 1.1 = 4.05)
 
         # Debug output for dimension validation
-        if self.seats > 0:
-            print(
-                f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
-                f"arrow={arrow_width:.0f}x{arrow_height:.0f} (size={arrow_size:.0f} for {self.seats} seats), "
-                f"padding={padding:.0f}, total={self.width:.0f}x{self.height:.0f}"
-            )
-        else:
-            print(
-                f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
-                f"no arrow, total={self.width:.0f}x{self.height:.0f}"
-            )
+        print(
+            f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
+            f"total={self.width:.0f}x{self.height:.0f}"
+        )
 
     def _calculate_grid_dimensions(self, seats: int) -> tuple[int, int]:
         """Calculate the grid dimensions (cols, rows) for the given number of seats."""
@@ -983,19 +963,9 @@ def render_graph(graph_file, output_file):
 
     # Draw labels at their adjusted positions
     for state_label in state_labels:
-        # Get efficiency gap data for this state
-        state_data = vote_data_with_labels.get(
-            state_label.state, {"efficiency_gap": 0.0}
-        )
-
-        # Render bounding box, text, and seat arrow using StateLabel methods
+        # Render bounding box and text only (no arrows)
         state_label.render_bbox(ax, map_width)
         state_label.render_text(ax, map_width)
-        state_label.render_seat_arrow(
-            ax,
-            map_width,
-            state_data["efficiency_gap"],
-        )
 
     # Reset plot limits to original bounds (before labels were added) with rounded bounds
     if all_patches:
