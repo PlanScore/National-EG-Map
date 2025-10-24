@@ -109,37 +109,36 @@ class StateLabel:
         text_width = max_line_length * char_width
         text_height = char_height * num_lines
 
-        # Calculate circle dimensions
+        # Calculate arrow dimensions
         if self.seats > 0:
-            base_radius = (
-                14  # pixels for 1 seat (reduced from 20 to make circles ~30% smaller)
+            base_size = (
+                28  # pixels for 1 seat (doubled from 14 to make arrows twice as large)
             )
-            circle_radius = base_radius * math.sqrt(self.seats)
-            circle_diameter = 2 * circle_radius
-            circle_width = circle_diameter
-            circle_height = circle_diameter
+            arrow_size = base_size * math.sqrt(self.seats)
+            arrow_width = arrow_size
+            arrow_height = arrow_size
         else:
-            circle_width = 0
-            circle_height = 0
+            arrow_width = 0
+            arrow_height = 0
 
-        # Add spacing between text and circle
-        padding = 20 if circle_height > 0 else 0  # Less padding than grid
+        # Add spacing between text and arrow
+        padding = 20 if arrow_height > 0 else 0  # Less padding than grid
 
-        # Layout: text on top, circle below, centered
-        self.width = max(text_width, circle_width)
-        self.height = text_height + padding + circle_height
+        # Layout: text on top, arrow below, centered
+        self.width = max(text_width, arrow_width)
+        self.height = text_height + padding + arrow_height
 
         # Debug output for dimension validation
         if self.seats > 0:
             print(
                 f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
-                f"circle={circle_width:.0f}x{circle_height:.0f} (radius={circle_radius:.0f} for {self.seats} seats), "
+                f"arrow={arrow_width:.0f}x{arrow_height:.0f} (size={arrow_size:.0f} for {self.seats} seats), "
                 f"padding={padding:.0f}, total={self.width:.0f}x{self.height:.0f}"
             )
         else:
             print(
                 f"DEBUG {self.state}: text='{self.text}' {text_width:.0f}x{text_height:.0f}, "
-                f"no circle, total={self.width:.0f}x{self.height:.0f}"
+                f"no arrow, total={self.width:.0f}x{self.height:.0f}"
             )
 
     def _calculate_grid_dimensions(self, seats: int) -> tuple[int, int]:
@@ -254,60 +253,121 @@ class StateLabel:
             fontfamily="monospace",
         )
 
-    def render_seat_circle(
+    def render_seat_arrow(
         self,
         ax: matplotlib.axes.Axes,
         map_width: float,
         efficiency_gap: float,
     ) -> None:
-        """Render a circle with area proportional to seats, colored by efficiency gap."""
+        """Render an arrow with size proportional to seats, colored and oriented by efficiency gap."""
         if self.seats <= 0:
             return
 
-        # Calculate circle radius based on seat count (area proportional to seats)
-        # Base radius for 1 seat, then scale by sqrt(seats) for proportional area
-        base_radius = (
-            14  # pixels for 1 seat (reduced from 20 to make circles ~30% smaller)
+        # Calculate arrow size based on seat count (area proportional to seats)
+        # Base size for 1 seat, then scale by sqrt(seats) for proportional area
+        base_size = (
+            28  # pixels for 1 seat (doubled from 14 to make arrows twice as large)
         )
-        circle_radius = base_radius * math.sqrt(self.seats)
+        arrow_size = base_size * math.sqrt(self.seats)
 
         # Scale to map coordinates
         char_scale = map_width / 200
-        scaled_radius = circle_radius * char_scale / 10
+        scaled_size = arrow_size * char_scale / 10
 
         # Determine color based on efficiency gap
-        circle_color = self._efficiency_gap_to_color(efficiency_gap)
+        arrow_color = self._efficiency_gap_to_color(efficiency_gap)
 
         # Get label position
         label_x = round(self.x)
         label_y = round(self.y)
         data_width, data_height = self.get_map_dimensions(map_width)
 
-        # Position circle below the text
+        # Position arrow below the text
         text_height = self._fontsize * 1.0 * char_scale / 10
         padding = 20 * char_scale / 10  # Less padding than grid
-        additional_offset = 8 * char_scale / 10  # Move circles down by 8px
+        additional_offset = 8 * char_scale / 10  # Move arrows down by 8px
 
-        circle_center_x = label_x
-        circle_center_y = (
+        arrow_center_x = label_x
+        arrow_center_y = (
             label_y
             + data_height // 2
             - text_height
             - padding
-            - scaled_radius
+            - scaled_size / 2
             - additional_offset
         )
 
-        # Draw the circle
-        circle = matplotlib.patches.Circle(
-            (circle_center_x, circle_center_y),
-            scaled_radius,
-            linewidth=1,
-            edgecolor="black",
-            facecolor=circle_color,
-            alpha=0.6,
-        )
-        ax.add_patch(circle)
+        # Determine arrow direction based on efficiency gap
+        if abs(efficiency_gap) < 0.01:
+            # Neutral - draw small circle instead
+            circle = matplotlib.patches.Circle(
+                (arrow_center_x, arrow_center_y),
+                scaled_size / 2,
+                linewidth=1,
+                edgecolor="black",
+                facecolor=arrow_color,
+                alpha=0.6,
+            )
+            ax.add_patch(circle)
+        else:
+            # Draw arrow: positive gap = NE (Republican), negative gap = NW (Democratic)
+            # Arrow length represents efficiency gap magnitude (0-20% range)
+            # Arrow width represents seat count (proportional to congressional delegation)
+            gap_magnitude = abs(efficiency_gap)
+            max_gap = 0.2  # 20% maximum for scaling
+            length_scale = min(gap_magnitude / max_gap, 1.0)  # Clamp to 0-1
+            min_length_scale = (
+                0.15  # Much shorter minimum length for more dramatic difference
+            )
+            max_length_scale = 2.0  # Make longer arrows much longer (200% of base size)
+            final_length_scale = (
+                min_length_scale + (max_length_scale - min_length_scale) * length_scale
+            )
+
+            arrow_length = scaled_size * final_length_scale
+            arrow_width = scaled_size * 0.6
+
+            if efficiency_gap > 0:
+                # Republican advantage - arrow points northeast (45 degrees)
+                angle_rad = math.pi / 4  # 45 degrees in radians
+            else:
+                # Democratic advantage - arrow points northwest (135 degrees)
+                angle_rad = 3 * math.pi / 4  # 135 degrees in radians
+
+            # Calculate arrow points
+            dx = math.cos(angle_rad) * arrow_length / 2
+            dy = math.sin(angle_rad) * arrow_length / 2
+
+            # Arrow tip
+            tip_x = arrow_center_x + dx
+            tip_y = arrow_center_y + dy
+
+            # Arrow base (perpendicular to direction)
+            perp_angle = angle_rad + math.pi / 2
+            base_dx = math.cos(perp_angle) * arrow_width / 2
+            base_dy = math.sin(perp_angle) * arrow_width / 2
+
+            # Arrow base center
+            base_center_x = arrow_center_x - dx * 0.3  # Move base back from center
+            base_center_y = arrow_center_y - dy * 0.3
+
+            # Arrow vertices (tip and base corners)
+            arrow_points = [
+                [tip_x, tip_y],  # Arrow tip
+                [base_center_x + base_dx, base_center_y + base_dy],  # Base corner 1
+                [base_center_x - dx * 0.4, base_center_y - dy * 0.4],  # Base notch
+                [base_center_x - base_dx, base_center_y - base_dy],  # Base corner 2
+            ]
+
+            arrow = matplotlib.patches.Polygon(
+                arrow_points,
+                closed=True,
+                linewidth=1,
+                edgecolor="black",
+                facecolor=arrow_color,
+                alpha=0.6,
+            )
+            ax.add_patch(arrow)
 
     def _efficiency_gap_to_color(self, efficiency_gap: float) -> str:
         """
@@ -721,10 +781,10 @@ def render_graph(graph_file, output_file):
             state_label.state, {"efficiency_gap": 0.0}
         )
 
-        # Render bounding box, text, and seat circle using StateLabel methods
+        # Render bounding box, text, and seat arrow using StateLabel methods
         state_label.render_bbox(ax, map_width)
         state_label.render_text(ax, map_width)
-        state_label.render_seat_circle(
+        state_label.render_seat_arrow(
             ax,
             map_width,
             state_data["efficiency_gap"],
