@@ -258,10 +258,9 @@ class StateLabel:
         self,
         ax: matplotlib.axes.Axes,
         map_width: float,
-        votes_dem_est: int,
-        votes_rep_est: int,
+        efficiency_gap: float,
     ) -> None:
-        """Render a circle with area proportional to seats, colored by vote estimates."""
+        """Render a circle with area proportional to seats, colored by efficiency gap."""
         if self.seats <= 0:
             return
 
@@ -276,11 +275,8 @@ class StateLabel:
         char_scale = map_width / 200
         scaled_radius = circle_radius * char_scale / 10
 
-        # Determine color based on vote estimates
-        if votes_dem_est < votes_rep_est:
-            circle_color = "red"
-        else:
-            circle_color = "blue"
+        # Determine color based on efficiency gap
+        circle_color = self._efficiency_gap_to_color(efficiency_gap)
 
         # Get label position
         label_x = round(self.x)
@@ -303,9 +299,42 @@ class StateLabel:
             linewidth=1,
             edgecolor="black",
             facecolor=circle_color,
-            alpha=0.7,
+            alpha=0.8,
         )
         ax.add_patch(circle)
+
+    def _efficiency_gap_to_color(self, efficiency_gap: float) -> str:
+        """
+        Convert efficiency gap to color.
+
+        Args:
+            efficiency_gap: Efficiency gap as fraction (-0.2 to +0.2 range)
+                           Positive = pro-Republican advantage
+                           Negative = pro-Democratic advantage
+
+        Returns:
+            Hex color string
+        """
+        # Clamp to -20% to +20% range
+        clamped_gap = max(-0.2, min(0.2, efficiency_gap))
+
+        if abs(clamped_gap) < 0.01:  # Very close to zero, use light gray
+            return "#D3D3D3"
+
+        if clamped_gap > 0:
+            # Pro-Republican (positive gap), red gradient
+            intensity = clamped_gap / 0.2  # 0 to 1
+            red = int(255 * (0.7 + 0.3 * intensity))  # 179 to 255
+            green = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
+            blue = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
+            return f"#{red:02x}{green:02x}{blue:02x}"
+        else:
+            # Pro-Democratic (negative gap), blue gradient
+            intensity = abs(clamped_gap) / 0.2  # 0 to 1
+            red = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
+            green = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
+            blue = int(255 * (0.7 + 0.3 * intensity))  # 179 to 255
+            return f"#{red:02x}{green:02x}{blue:02x}"
 
     def to_force_dict(self, map_width: float) -> dict[str, typing.Any]:
         """Convert to dictionary format for force-directed algorithm."""
@@ -477,9 +506,54 @@ def force_directed_label_layout(
         label["y"] = positions[i][1]
 
 
+def calculate_efficiency_gap(district_votes):
+    """
+    Calculate the efficiency gap for a state's districts.
+
+    Args:
+        district_votes: List of tuples (votes_dem, votes_rep) for each district
+
+    Returns:
+        Efficiency gap as a fraction (positive = pro-Democratic, negative = pro-Republican)
+    """
+    total_votes = 0
+    dem_wasted = 0
+    rep_wasted = 0
+
+    for votes_dem, votes_rep in district_votes:
+        district_total = votes_dem + votes_rep
+        if district_total == 0:
+            continue
+
+        total_votes += district_total
+
+        # Calculate wasted votes
+        if votes_dem > votes_rep:
+            # Democrat wins
+            # Republican wasted votes = all their votes (they lost)
+            rep_wasted += votes_rep
+            # Democrat wasted votes = votes above 50% + 1 threshold
+            dem_wasted += votes_dem - (district_total // 2 + 1)
+        else:
+            # Republican wins
+            # Democrat wasted votes = all their votes (they lost)
+            dem_wasted += votes_dem
+            # Republican wasted votes = votes above 50% + 1 threshold
+            rep_wasted += votes_rep - (district_total // 2 + 1)
+
+    if total_votes == 0:
+        return 0.0
+
+    # Efficiency gap = (Dem wasted - Rep wasted) / Total votes
+    # Positive means Republicans have advantage (more Dem wasted votes)
+    # Negative means Democrats have advantage (more Rep wasted votes)
+    return (dem_wasted - rep_wasted) / total_votes
+
+
 def load_2024_vote_data(tsv_file):
-    """Load 2024 vote data from TSV file."""
-    vote_data = {}  # state -> {votes_dem_est, votes_rep_est, seats}
+    """Load 2024 vote data from TSV file and calculate efficiency gaps."""
+    state_districts = {}  # state -> list of (votes_dem, votes_rep) tuples
+    state_totals = {}  # state -> {votes_dem_est, votes_rep_est, seats}
 
     with open(tsv_file, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f, delimiter="\t")
@@ -498,18 +572,34 @@ def load_2024_vote_data(tsv_file):
                     else 0
                 )
 
-                if state not in vote_data:
-                    vote_data[state] = {
+                # Store district-level data for efficiency gap calculation
+                if state not in state_districts:
+                    state_districts[state] = []
+                state_districts[state].append((votes_dem_est, votes_rep_est))
+
+                # Store state totals
+                if state not in state_totals:
+                    state_totals[state] = {
                         "votes_dem_est": 0,
                         "votes_rep_est": 0,
                         "seats": 0,
+                        "efficiency_gap": 0.0,
                     }
 
-                vote_data[state]["votes_dem_est"] += votes_dem_est
-                vote_data[state]["votes_rep_est"] += votes_rep_est
-                vote_data[state]["seats"] += 1
+                state_totals[state]["votes_dem_est"] += votes_dem_est
+                state_totals[state]["votes_rep_est"] += votes_rep_est
+                state_totals[state]["seats"] += 1
 
-    return vote_data
+    # Calculate efficiency gaps for each state
+    for state in state_totals:
+        if state in state_districts:
+            efficiency_gap = calculate_efficiency_gap(state_districts[state])
+            state_totals[state]["efficiency_gap"] = efficiency_gap
+            print(
+                f"DEBUG {state}: Efficiency gap = {efficiency_gap:.3f} ({efficiency_gap * 100:.1f}%)"
+            )
+
+    return state_totals
 
 
 def render_graph(graph_file, output_file):
@@ -577,12 +667,10 @@ def render_graph(graph_file, output_file):
         # Use 2024 data if available, otherwise fall back to graph data
         if state_code in vote_data:
             seats = vote_data[state_code]["seats"]
-            votes_dem_est = vote_data[state_code]["votes_dem_est"]
-            votes_rep_est = vote_data[state_code]["votes_rep_est"]
+            efficiency_gap = vote_data[state_code]["efficiency_gap"]
         else:
             seats = data.get("seats", 0)
-            votes_dem_est = 0
-            votes_rep_est = 0
+            efficiency_gap = 0.0
 
         if x is not None and y is not None and seats > 0:
             state_label = StateLabel(
@@ -593,8 +681,7 @@ def render_graph(graph_file, output_file):
             )
             state_labels.append(state_label)
             vote_data_with_labels[state_code] = {
-                "votes_dem_est": votes_dem_est,
-                "votes_rep_est": votes_rep_est,
+                "efficiency_gap": efficiency_gap,
             }
 
     print(f"Applying force-directed layout to {len(state_labels)} labels...")
@@ -621,9 +708,9 @@ def render_graph(graph_file, output_file):
 
     # Draw labels at their adjusted positions
     for state_label in state_labels:
-        # Get vote data for this state
-        state_vote_data = vote_data_with_labels.get(
-            state_label.state, {"votes_dem_est": 0, "votes_rep_est": 0}
+        # Get efficiency gap data for this state
+        state_data = vote_data_with_labels.get(
+            state_label.state, {"efficiency_gap": 0.0}
         )
 
         # Render bounding box, text, and seat circle using StateLabel methods
@@ -632,8 +719,7 @@ def render_graph(graph_file, output_file):
         state_label.render_seat_circle(
             ax,
             map_width,
-            state_vote_data["votes_dem_est"],
-            state_vote_data["votes_rep_est"],
+            state_data["efficiency_gap"],
         )
 
     # Reset plot limits to original bounds (before labels were added) with rounded bounds
