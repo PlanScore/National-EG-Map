@@ -197,7 +197,7 @@ class StateLabel:
         return data_width, data_height
 
     def render_bbox(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
-        """Render the orange bounding box for this label."""
+        """Render the white bounding box for this label."""
         data_width, data_height = self.get_map_dimensions(map_width)
 
         # Round all coordinates for cleaner SVG output
@@ -217,7 +217,7 @@ class StateLabel:
             bbox_height,
             linewidth=0,
             edgecolor="none",
-            facecolor="orange",
+            facecolor="white",
             alpha=0.5,
         )
         ax.add_patch(bbox_rect)
@@ -286,10 +286,16 @@ class StateLabel:
         # Position circle below the text
         text_height = self._fontsize * 1.0 * char_scale / 10
         padding = 20 * char_scale / 10  # Less padding than grid
+        additional_offset = 8 * char_scale / 10  # Move circles down by 8px
 
         circle_center_x = label_x
         circle_center_y = (
-            label_y + data_height // 2 - text_height - padding - scaled_radius
+            label_y
+            + data_height // 2
+            - text_height
+            - padding
+            - scaled_radius
+            - additional_offset
         )
 
         # Draw the circle
@@ -299,7 +305,7 @@ class StateLabel:
             linewidth=1,
             edgecolor="black",
             facecolor=circle_color,
-            alpha=0.8,
+            alpha=0.6,
         )
         ax.add_patch(circle)
 
@@ -322,18 +328,20 @@ class StateLabel:
             return "#D3D3D3"
 
         if clamped_gap > 0:
-            # Pro-Republican (positive gap), red gradient
+            # Pro-Republican (positive gap), red gradient to rgb(199, 28, 54)
             intensity = clamped_gap / 0.2  # 0 to 1
-            red = int(255 * (0.7 + 0.3 * intensity))  # 179 to 255
-            green = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
-            blue = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
+            # Interpolate from light gray (211, 211, 211) to red (199, 28, 54)
+            red = int(211 + (199 - 211) * intensity)
+            green = int(211 + (28 - 211) * intensity)
+            blue = int(211 + (54 - 211) * intensity)
             return f"#{red:02x}{green:02x}{blue:02x}"
         else:
-            # Pro-Democratic (negative gap), blue gradient
+            # Pro-Democratic (negative gap), blue gradient to rgb(0, 73, 168)
             intensity = abs(clamped_gap) / 0.2  # 0 to 1
-            red = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
-            green = int(255 * (0.7 - 0.7 * intensity))  # 179 to 0
-            blue = int(255 * (0.7 + 0.3 * intensity))  # 179 to 255
+            # Interpolate from light gray (211, 211, 211) to blue (0, 73, 168)
+            red = int(211 + (0 - 211) * intensity)
+            green = int(211 + (73 - 211) * intensity)
+            blue = int(211 + (168 - 211) * intensity)
             return f"#{red:02x}{green:02x}{blue:02x}"
 
     def to_force_dict(self, map_width: float) -> dict[str, typing.Any]:
