@@ -711,16 +711,19 @@ def load_2024_vote_data(tsv_file):
     return state_totals
 
 
-def calculate_state_scale_factor(state_code, seats, area_sq_miles=None):
-    """Calculate scaling factor for state polygon so final area is proportional to seat count.
+def calculate_state_scale_factor(
+    state_code, seats, area_sq_miles=None, efficiency_gap=0.0
+):
+    """Calculate scaling factor for state polygon based on efficiency gap magnitude.
 
     Args:
         state_code: Two-letter state code
         seats: Number of congressional seats
         area_sq_miles: State area in square miles (optional)
+        efficiency_gap: Efficiency gap as fraction (-0.2 to +0.2 range)
 
     Returns:
-        Scale factor to make final area proportional to seats
+        Scale factor to make final area proportional to efficiency gap magnitude
     """
     # Rough state areas in square miles (approximate values)
     STATE_AREAS = {
@@ -775,28 +778,25 @@ def calculate_state_scale_factor(state_code, seats, area_sq_miles=None):
         "DC": 68,
     }
 
-    import math
-
     area = area_sq_miles or STATE_AREAS.get(state_code, 50000)  # Default to medium size
 
-    # Target: final area should be proportional to seat count
-    # If we want final_area = k * seats for some constant k,
-    # and current_area = area, then:
-    # scale_factor^2 * current_area = k * seats
-    # scale_factor = sqrt(k * seats / current_area)
+    # Target: final area should be proportional to absolute efficiency gap
+    # efficiency_gap ranges from -20% to +20%, we want magnitude (0% to 20%)
+    gap_magnitude = abs(efficiency_gap)
+    max_gap = 0.2  # 20% maximum
 
-    # Choose k so that a "typical" state (say, 10 seats, 50000 sq miles) has scale_factor = 1.0
-    # k * 10 = 50000, so k = 5000
-    k = 5000  # Square miles per seat for scale_factor = 1.0
+    # Normalize gap magnitude to 0-1 range
+    normalized_gap = min(gap_magnitude / max_gap, 1.0)
 
-    target_area = k * seats
-    scale_factor = math.sqrt(target_area / area) if area > 0 else 1.0
-
-    # Clamp scale factor to reasonable bounds (0.1 to 3.0)
-    scale_factor = max(0.1, min(3.0, scale_factor))
+    # Scale factor based on gap magnitude
+    # 0% gap = small scale (0.2), 20% gap = large scale (1.5)
+    min_scale = 0.2
+    max_scale = 1.5
+    scale_factor = min_scale + (max_scale - min_scale) * normalized_gap
 
     print(
-        f"DEBUG {state_code}: area={area}, seats={seats}, target_area={target_area}, scale={scale_factor:.2f}"
+        f"DEBUG {state_code}: area={area}, gap={efficiency_gap:.3f} ({efficiency_gap * 100:.1f}%), "
+        f"magnitude={gap_magnitude:.3f}, normalized={normalized_gap:.3f}, scale={scale_factor:.2f}"
     )
 
     return scale_factor
@@ -872,12 +872,14 @@ def render_graph(graph_file, output_file):
     for state_code, data in G.nodes(data=True):
         wkt = data.get("wkt")
         if wkt:
-            # Calculate scale factor based on seats and area
-            seats = vote_data.get(state_code, {}).get("seats", data.get("seats", 1))
-            scale_factor = calculate_state_scale_factor(state_code, seats)
-
-            # Get efficiency gap for coloring
+            # Get efficiency gap for both scaling and coloring
             efficiency_gap = vote_data.get(state_code, {}).get("efficiency_gap", 0.0)
+            seats = vote_data.get(state_code, {}).get("seats", data.get("seats", 1))
+
+            # Calculate scale factor based on efficiency gap magnitude
+            scale_factor = calculate_state_scale_factor(
+                state_code, seats, efficiency_gap=efficiency_gap
+            )
 
             state_patches = parse_wkt_polygon(wkt, scale_factor)
 
