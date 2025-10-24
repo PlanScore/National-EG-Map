@@ -328,35 +328,68 @@ class StateLabel:
             arrow_width = scaled_size * 0.6
 
             if efficiency_gap > 0:
-                # Republican advantage - arrow points northeast (45 degrees)
-                angle_rad = math.pi / 4  # 45 degrees in radians
+                # Republican advantage - arrow points northeast (30 degrees)
+                angle_rad = math.pi / 6  # 30 degrees in radians
             else:
-                # Democratic advantage - arrow points northwest (135 degrees)
-                angle_rad = 3 * math.pi / 4  # 135 degrees in radians
+                # Democratic advantage - arrow points northwest (150 degrees)
+                angle_rad = 5 * math.pi / 6  # 150 degrees in radians
 
-            # Calculate arrow points
+            # Calculate arrow points for classic arrow shape
             dx = math.cos(angle_rad) * arrow_length / 2
             dy = math.sin(angle_rad) * arrow_length / 2
 
-            # Arrow tip
+            # Perpendicular direction for arrow width
+            perp_angle = angle_rad + math.pi / 2
+            perp_dx = math.cos(perp_angle)
+            perp_dy = math.sin(perp_angle)
+
+            # Arrow tip (point of the arrow)
             tip_x = arrow_center_x + dx
             tip_y = arrow_center_y + dy
 
-            # Arrow base (perpendicular to direction)
-            perp_angle = angle_rad + math.pi / 2
-            base_dx = math.cos(perp_angle) * arrow_width / 2
-            base_dy = math.sin(perp_angle) * arrow_width / 2
+            # Arrow head dimensions
+            head_length = arrow_length * 0.3  # Head is 30% of total length
+            head_width = arrow_width * 0.8  # Head width is wider than shaft
 
-            # Arrow base center
-            base_center_x = arrow_center_x - dx * 0.3  # Move base back from center
-            base_center_y = arrow_center_y - dy * 0.3
+            # Arrow shaft dimensions
+            shaft_width = arrow_width * 0.4  # Shaft is narrower than head
 
-            # Arrow vertices (tip and base corners)
+            # Calculate key points
+            # Head base (where head meets shaft)
+            head_base_x = arrow_center_x + dx - math.cos(angle_rad) * head_length
+            head_base_y = arrow_center_y + dy - math.sin(angle_rad) * head_length
+
+            # Arrow tail
+            tail_x = arrow_center_x - dx
+            tail_y = arrow_center_y - dy
+
+            # Classic arrow vertices (clockwise from tip)
             arrow_points = [
                 [tip_x, tip_y],  # Arrow tip
-                [base_center_x + base_dx, base_center_y + base_dy],  # Base corner 1
-                [base_center_x - dx * 0.4, base_center_y - dy * 0.4],  # Base notch
-                [base_center_x - base_dx, base_center_y - base_dy],  # Base corner 2
+                [
+                    head_base_x + perp_dx * head_width / 2,
+                    head_base_y + perp_dy * head_width / 2,
+                ],  # Head corner 1
+                [
+                    head_base_x + perp_dx * shaft_width / 2,
+                    head_base_y + perp_dy * shaft_width / 2,
+                ],  # Shaft corner 1
+                [
+                    tail_x + perp_dx * shaft_width / 2,
+                    tail_y + perp_dy * shaft_width / 2,
+                ],  # Tail corner 1
+                [
+                    tail_x - perp_dx * shaft_width / 2,
+                    tail_y - perp_dy * shaft_width / 2,
+                ],  # Tail corner 2
+                [
+                    head_base_x - perp_dx * shaft_width / 2,
+                    head_base_y - perp_dy * shaft_width / 2,
+                ],  # Shaft corner 2
+                [
+                    head_base_x - perp_dx * head_width / 2,
+                    head_base_y - perp_dy * head_width / 2,
+                ],  # Head corner 2
             ]
 
             arrow = matplotlib.patches.Polygon(
