@@ -16,5 +16,8 @@ us-states3-2022.svg: us-states.pickle render-graph3.py
 us-states.pickle: create-graph.py
 	python create-graph.py us-states.pickle
 
+us-election-animation.gif: us-states.pickle generate_animation.sh render-graph3.py
+	./generate_animation.sh
+
 clean:
-	rm -f us-states.pickle us-states.svg us-states2.svg us-states3.svg us-states3-2022.svg
+	rm -f us-states.pickle us-states.svg us-states2.svg us-states3.svg us-states3-2022.svg us-election-animation.gif
