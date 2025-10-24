@@ -714,7 +714,7 @@ def load_2024_vote_data(tsv_file):
 def calculate_state_scale_factor(
     state_code, seats, area_sq_miles=None, efficiency_gap=0.0
 ):
-    """Calculate scaling factor for state polygon based on efficiency gap magnitude.
+    """Calculate scaling factor for state polygon based on seat bias (efficiency gap × seats).
 
     Args:
         state_code: Two-letter state code
@@ -723,7 +723,7 @@ def calculate_state_scale_factor(
         efficiency_gap: Efficiency gap as fraction (-0.2 to +0.2 range)
 
     Returns:
-        Scale factor to make final area proportional to efficiency gap magnitude
+        Scale factor to make final area proportional to absolute seat bias
     """
     # Rough state areas in square miles (approximate values)
     STATE_AREAS = {
@@ -778,25 +778,38 @@ def calculate_state_scale_factor(
         "DC": 68,
     }
 
+    import math
+
     area = area_sq_miles or STATE_AREAS.get(state_code, 50000)  # Default to medium size
 
-    # Target: final area should be proportional to absolute efficiency gap
-    # efficiency_gap ranges from -20% to +20%, we want magnitude (0% to 20%)
-    gap_magnitude = abs(efficiency_gap)
-    max_gap = 0.2  # 20% maximum
+    # Calculate seat bias (efficiency gap × seats)
+    seat_bias = efficiency_gap * seats
+    seat_bias_magnitude = abs(seat_bias)
 
-    # Normalize gap magnitude to 0-1 range
-    normalized_gap = min(gap_magnitude / max_gap, 1.0)
+    # Target: final area should be proportional to absolute seat bias
+    # We want scale_factor² × current_area = k × seat_bias_magnitude
+    # So scale_factor = sqrt(k × seat_bias_magnitude / current_area)
 
-    # Scale factor based on gap magnitude
-    # 0% gap = small scale (0.2), 20% gap = large scale (1.5)
-    min_scale = 0.2
-    max_scale = 1.5
-    scale_factor = min_scale + (max_scale - min_scale) * normalized_gap
+    # Choose k so that a bias of ~3 seats gives scale factor 1.0 for typical area (50000 sq miles)
+    # k × 3 = 50000, so k ≈ 16667
+    k = 16667  # Area per unit seat bias
+
+    # Calculate target area based on seat bias magnitude
+    target_area = k * seat_bias_magnitude
+
+    # If no bias, use minimum area
+    if seat_bias_magnitude == 0:
+        target_area = k * 0.1  # Minimum bias equivalent
+
+    scale_factor = math.sqrt(target_area / area) if area > 0 else 1.0
+
+    # Clamp scale factor to reasonable bounds (0.1 to 2.5)
+    scale_factor = max(0.1, min(2.5, scale_factor))
 
     print(
         f"DEBUG {state_code}: area={area}, gap={efficiency_gap:.3f} ({efficiency_gap * 100:.1f}%), "
-        f"magnitude={gap_magnitude:.3f}, normalized={normalized_gap:.3f}, scale={scale_factor:.2f}"
+        f"seats={seats}, seat_bias={seat_bias:.1f}, magnitude={seat_bias_magnitude:.1f}, "
+        f"target_area={target_area:.0f}, scale={scale_factor:.2f}"
     )
 
     return scale_factor
