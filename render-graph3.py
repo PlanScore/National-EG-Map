@@ -123,9 +123,7 @@ class StateLabel:
 
         # Calculate arrow dimensions
         if self.seats > 0:
-            base_size = (
-                28  # pixels for 1 seat (doubled from 14 to make arrows twice as large)
-            )
+            base_size = 14  # pixels for 1 seat (reduced from 28 to make arrows smaller)
             arrow_size = base_size * math.sqrt(self.seats)
             arrow_width = arrow_size
             arrow_height = arrow_size
@@ -277,9 +275,7 @@ class StateLabel:
 
         # Calculate arrow size based on seat count (area proportional to seats)
         # Base size for 1 seat, then scale by sqrt(seats) for proportional area
-        base_size = (
-            28  # pixels for 1 seat (doubled from 14 to make arrows twice as large)
-        )
+        base_size = 14  # pixels for 1 seat (reduced from 28 to make arrows smaller)
         arrow_size = base_size * math.sqrt(self.seats)
 
         # Scale to map coordinates
@@ -716,7 +712,7 @@ def load_2024_vote_data(tsv_file):
 
 
 def calculate_state_scale_factor(state_code, seats, area_sq_miles=None):
-    """Calculate scaling factor for state polygon based on area and seat count.
+    """Calculate scaling factor for state polygon so final area is proportional to seat count.
 
     Args:
         state_code: Two-letter state code
@@ -724,47 +720,122 @@ def calculate_state_scale_factor(state_code, seats, area_sq_miles=None):
         area_sq_miles: State area in square miles (optional)
 
     Returns:
-        Scale factor between 0.3 and 1.0
+        Scale factor to make final area proportional to seats
     """
     # Rough state areas in square miles (approximate values)
     STATE_AREAS = {
-        'AK': 663300, 'TX': 268596, 'CA': 163695, 'MT': 147040, 'NM': 121590,
-        'AZ': 113990, 'NV': 110572, 'CO': 104094, 'OR': 98379, 'WY': 97813,
-        'MI': 96714, 'MN': 86936, 'UT': 84897, 'ID': 83569, 'KS': 82278,
-        'NE': 77348, 'ND': 70698, 'OK': 69899, 'MO': 69707, 'FL': 65758,
-        'WI': 65496, 'GA': 59425, 'IL': 57914, 'IA': 56273, 'NY': 54555,
-        'NC': 53819, 'AR': 53179, 'AL': 52420, 'LA': 52378, 'MS': 48432,
-        'PA': 46054, 'OH': 44826, 'VA': 42775, 'TN': 42144, 'KY': 40408,
-        'IN': 36420, 'ME': 35384, 'SC': 32020, 'WV': 24230, 'MD': 12406,
-        'HI': 10932, 'MA': 10554, 'VT': 9616, 'NH': 9349, 'NJ': 8723,
-        'CT': 5543, 'DE': 2489, 'RI': 1545, 'DC': 68
+        "AK": 663300,
+        "TX": 268596,
+        "CA": 163695,
+        "MT": 147040,
+        "NM": 121590,
+        "AZ": 113990,
+        "NV": 110572,
+        "CO": 104094,
+        "OR": 98379,
+        "WY": 97813,
+        "MI": 96714,
+        "MN": 86936,
+        "UT": 84897,
+        "ID": 83569,
+        "KS": 82278,
+        "NE": 77348,
+        "ND": 70698,
+        "OK": 69899,
+        "MO": 69707,
+        "FL": 65758,
+        "WI": 65496,
+        "GA": 59425,
+        "IL": 57914,
+        "IA": 56273,
+        "NY": 54555,
+        "NC": 53819,
+        "AR": 53179,
+        "AL": 52420,
+        "LA": 52378,
+        "MS": 48432,
+        "PA": 46054,
+        "OH": 44826,
+        "VA": 42775,
+        "TN": 42144,
+        "KY": 40408,
+        "IN": 36420,
+        "ME": 35384,
+        "SC": 32020,
+        "WV": 24230,
+        "MD": 12406,
+        "HI": 10932,
+        "MA": 10554,
+        "VT": 9616,
+        "NH": 9349,
+        "NJ": 8723,
+        "CT": 5543,
+        "DE": 2489,
+        "RI": 1545,
+        "DC": 68,
     }
+
+    import math
 
     area = area_sq_miles or STATE_AREAS.get(state_code, 50000)  # Default to medium size
 
-    # Calculate representation ratio (seats per 1000 sq miles)
-    representation_ratio = seats / (area / 1000) if area > 0 else 1.0
+    # Target: final area should be proportional to seat count
+    # If we want final_area = k * seats for some constant k,
+    # and current_area = area, then:
+    # scale_factor^2 * current_area = k * seats
+    # scale_factor = sqrt(k * seats / current_area)
 
-    # Base scale factor on representation ratio
-    # High ratio (dense representation) = larger scale
-    # Low ratio (sparse representation) = smaller scale
+    # Choose k so that a "typical" state (say, 10 seats, 50000 sq miles) has scale_factor = 1.0
+    # k * 10 = 50000, so k = 5000
+    k = 5000  # Square miles per seat for scale_factor = 1.0
 
-    # Normalize representation ratio (typical range is 0.001 to 10)
-    # Use log scale for better distribution
-    import math
-    log_ratio = math.log10(max(representation_ratio, 0.001))
+    target_area = k * seats
+    scale_factor = math.sqrt(target_area / area) if area > 0 else 1.0
 
-    # Map log ratio to scale factor (0.3 to 1.0)
-    # log_ratio typically ranges from -3 to 1
-    normalized_ratio = (log_ratio + 3) / 4  # Map -3..1 to 0..1
-    normalized_ratio = max(0, min(1, normalized_ratio))  # Clamp to 0-1
+    # Clamp scale factor to reasonable bounds (0.1 to 3.0)
+    scale_factor = max(0.1, min(3.0, scale_factor))
 
-    # Scale factor ranges from 0.3 to 1.0
-    scale_factor = 0.3 + 0.7 * normalized_ratio
-
-    print(f"DEBUG {state_code}: area={area}, seats={seats}, ratio={representation_ratio:.3f}, scale={scale_factor:.2f}")
+    print(
+        f"DEBUG {state_code}: area={area}, seats={seats}, target_area={target_area}, scale={scale_factor:.2f}"
+    )
 
     return scale_factor
+
+
+def _efficiency_gap_to_color(efficiency_gap: float) -> str:
+    """
+    Convert efficiency gap to color.
+
+    Args:
+        efficiency_gap: Efficiency gap as fraction (-0.2 to +0.2 range)
+                       Positive = pro-Republican advantage
+                       Negative = pro-Democratic advantage
+
+    Returns:
+        Hex color string
+    """
+    # Clamp to -20% to +20% range
+    clamped_gap = max(-0.2, min(0.2, efficiency_gap))
+
+    if abs(clamped_gap) < 0.01:  # Very close to zero, use light gray
+        return "#D3D3D3"
+
+    if clamped_gap > 0:
+        # Pro-Republican (positive gap), red gradient to rgb(199, 28, 54)
+        intensity = clamped_gap / 0.2  # 0 to 1
+        # Interpolate from light gray (211, 211, 211) to red (199, 28, 54)
+        red = int(211 + (199 - 211) * intensity)
+        green = int(211 + (28 - 211) * intensity)
+        blue = int(211 + (54 - 211) * intensity)
+        return f"#{red:02x}{green:02x}{blue:02x}"
+    else:
+        # Pro-Democratic (negative gap), blue gradient to rgb(0, 73, 168)
+        intensity = abs(clamped_gap) / 0.2  # 0 to 1
+        # Interpolate from light gray (211, 211, 211) to blue (0, 73, 168)
+        red = int(211 + (0 - 211) * intensity)
+        green = int(211 + (73 - 211) * intensity)
+        blue = int(211 + (168 - 211) * intensity)
+        return f"#{red:02x}{green:02x}{blue:02x}"
 
 
 def render_graph(graph_file, output_file):
@@ -794,6 +865,9 @@ def render_graph(graph_file, output_file):
 
     all_patches = []
 
+    # Store state patches with their efficiency gaps for coloring
+    state_patch_data = []
+
     # Process each state polygon with scaling
     for state_code, data in G.nodes(data=True):
         wkt = data.get("wkt")
@@ -802,21 +876,38 @@ def render_graph(graph_file, output_file):
             seats = vote_data.get(state_code, {}).get("seats", data.get("seats", 1))
             scale_factor = calculate_state_scale_factor(state_code, seats)
 
+            # Get efficiency gap for coloring
+            efficiency_gap = vote_data.get(state_code, {}).get("efficiency_gap", 0.0)
+
             state_patches = parse_wkt_polygon(wkt, scale_factor)
-            all_patches.extend(state_patches)
 
-    print(f"Created {len(all_patches)} polygon patches")
+            # Store patches with their color info
+            for patch in state_patches:
+                state_patch_data.append(
+                    {
+                        "patch": patch,
+                        "efficiency_gap": efficiency_gap,
+                        "state_code": state_code,
+                    }
+                )
 
-    # Create patch collection
-    if all_patches:
-        collection = matplotlib.collections.PatchCollection(
-            all_patches,
-            facecolor="white",
-            edgecolor="#333333",  # dark grey
-            linewidth=1.0,
-            alpha=1.0,
-        )
-        ax.add_collection(collection)
+    print(f"Created {len(state_patch_data)} polygon patches")
+
+    # Create colored patches for each state
+    if state_patch_data:
+        for patch_data in state_patch_data:
+            patch = patch_data["patch"]
+            efficiency_gap = patch_data["efficiency_gap"]
+
+            # Use the same color calculation as arrows
+            patch_color = _efficiency_gap_to_color(efficiency_gap)
+
+            patch.set_facecolor(patch_color)
+            patch.set_edgecolor("#333333")  # dark grey border
+            patch.set_linewidth(1.0)
+            patch.set_alpha(0.8)  # Slightly transparent for better text visibility
+
+            ax.add_patch(patch)
 
         # Set plot limits based on patch extents
         ax.autoscale()
