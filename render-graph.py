@@ -6,6 +6,7 @@ Takes a pickled graph file and renders state polygons as white shapes
 with dark grey borders on a transparent background.
 """
 
+import csv
 import dataclasses
 import math
 import pickle
@@ -197,7 +198,7 @@ class StateLabel:
         return data_width, data_height
 
     def render_bbox(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
-        """Render the orange bounding box for this label."""
+        """Render the white bounding box for this label."""
         data_width, data_height = self.get_map_dimensions(map_width)
 
         # Round all coordinates for cleaner SVG output
@@ -217,8 +218,8 @@ class StateLabel:
             bbox_height,
             linewidth=0,
             edgecolor="none",
-            facecolor="orange",
-            alpha=0.5,
+            facecolor="white",
+            alpha=0.75,
         )
         ax.add_patch(bbox_rect)
 
@@ -254,8 +255,10 @@ class StateLabel:
             fontfamily="monospace",
         )
 
-    def render_seat_dots(self, ax: matplotlib.axes.Axes, map_width: float) -> None:
-        """Render the seat dots grid."""
+    def render_seat_dots(
+        self, ax: matplotlib.axes.Axes, map_width: float, efficiency_gap: float
+    ) -> None:
+        """Render the seat dots grid with efficiency gap colors."""
         if self.seats <= 0:
             return
 
@@ -287,6 +290,9 @@ class StateLabel:
             label_y + data_height // 2 - margin_4px - text_height - padding
         )  # Below text + padding, inside margin
 
+        # Determine color based on efficiency gap
+        dot_color = self._efficiency_gap_to_color(efficiency_gap)
+
         # Draw seats as filled rectangles
         seats_drawn = 0
         for row in range(grid_rows):
@@ -303,7 +309,7 @@ class StateLabel:
                     scaled_dot_size,
                     linewidth=0,
                     edgecolor="none",
-                    facecolor="black",
+                    facecolor=dot_color,
                     alpha=1.0,
                 )
                 ax.add_patch(dot_rect)
@@ -311,6 +317,41 @@ class StateLabel:
 
             if seats_drawn >= self.seats:
                 break
+
+    def _efficiency_gap_to_color(self, efficiency_gap: float) -> str:
+        """
+        Convert efficiency gap to color.
+
+        Args:
+            efficiency_gap: Efficiency gap as fraction (-0.2 to +0.2 range)
+                           Positive = pro-Republican advantage
+                           Negative = pro-Democratic advantage
+
+        Returns:
+            Hex color string
+        """
+        # Clamp to -20% to +20% range
+        clamped_gap = max(-0.2, min(0.2, efficiency_gap))
+
+        if abs(clamped_gap) < 0.01:  # Very close to zero, use light gray
+            return "#D3D3D3"
+
+        if clamped_gap > 0:
+            # Pro-Republican (positive gap), red gradient to rgb(199, 28, 54)
+            intensity = clamped_gap / 0.2  # 0 to 1
+            # Interpolate from light gray (211, 211, 211) to red (199, 28, 54)
+            red = int(211 + (199 - 211) * intensity)
+            green = int(211 + (28 - 211) * intensity)
+            blue = int(211 + (54 - 211) * intensity)
+            return f"#{red:02x}{green:02x}{blue:02x}"
+        else:
+            # Pro-Democratic (negative gap), blue gradient to rgb(0, 73, 168)
+            intensity = abs(clamped_gap) / 0.2  # 0 to 1
+            # Interpolate from light gray (211, 211, 211) to blue (0, 73, 168)
+            red = int(211 + (0 - 211) * intensity)
+            green = int(211 + (73 - 211) * intensity)
+            blue = int(211 + (168 - 211) * intensity)
+            return f"#{red:02x}{green:02x}{blue:02x}"
 
     def to_force_dict(self, map_width: float) -> dict[str, typing.Any]:
         """Convert to dictionary format for force-directed algorithm."""
@@ -482,6 +523,102 @@ def force_directed_label_layout(
         label["y"] = positions[i][1]
 
 
+def calculate_efficiency_gap(district_votes):
+    """
+    Calculate the efficiency gap for a state's districts.
+
+    Args:
+        district_votes: List of tuples (votes_dem, votes_rep) for each district
+
+    Returns:
+        Efficiency gap as a fraction (positive = pro-Republican advantage, negative = pro-Democratic advantage)
+    """
+    total_votes = 0
+    dem_wasted = 0
+    rep_wasted = 0
+
+    for votes_dem, votes_rep in district_votes:
+        district_total = votes_dem + votes_rep
+        if district_total == 0:
+            continue
+
+        total_votes += district_total
+
+        # Calculate wasted votes
+        if votes_dem > votes_rep:
+            # Democrat wins
+            # Republican wasted votes = all their votes (they lost)
+            rep_wasted += votes_rep
+            # Democrat wasted votes = votes above 50% + 1 threshold
+            dem_wasted += votes_dem - (district_total // 2 + 1)
+        else:
+            # Republican wins
+            # Democrat wasted votes = all their votes (they lost)
+            dem_wasted += votes_dem
+            # Republican wasted votes = votes above 50% + 1 threshold
+            rep_wasted += votes_rep - (district_total // 2 + 1)
+
+    if total_votes == 0:
+        return 0.0
+
+    # Efficiency gap = (Dem wasted - Rep wasted) / Total votes
+    # Positive means Republicans have advantage (more Dem wasted votes)
+    # Negative means Democrats have advantage (more Rep wasted votes)
+    return (dem_wasted - rep_wasted) / total_votes
+
+
+def load_2024_vote_data(tsv_file):
+    """Load 2024 vote data from TSV file and calculate efficiency gaps."""
+    state_districts = {}  # state -> list of (votes_dem, votes_rep) tuples
+    state_totals = {}  # state -> {votes_dem_est, votes_rep_est, seats}
+
+    with open(tsv_file, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f, delimiter="\t")
+
+        for row in reader:
+            if row["year"] == "2024":
+                state = row["stateabrev"]
+                votes_dem_est = (
+                    int(row["votes_dem_est"].replace(",", ""))
+                    if row["votes_dem_est"]
+                    else 0
+                )
+                votes_rep_est = (
+                    int(row["votes_rep_est"].replace(",", ""))
+                    if row["votes_rep_est"]
+                    else 0
+                )
+
+                # Store district-level data for efficiency gap calculation
+                if state not in state_districts:
+                    state_districts[state] = []
+                state_districts[state].append((votes_dem_est, votes_rep_est))
+
+                # Store state totals
+                if state not in state_totals:
+                    state_totals[state] = {
+                        "votes_dem_est": 0,
+                        "votes_rep_est": 0,
+                        "seats": 0,
+                        "efficiency_gap": 0.0,
+                    }
+
+                state_totals[state]["votes_dem_est"] += votes_dem_est
+                state_totals[state]["votes_rep_est"] += votes_rep_est
+                state_totals[state]["seats"] += 1
+
+    # Calculate efficiency gaps for each state
+    for state in state_totals:
+        if state in state_districts:
+            efficiency_gap = calculate_efficiency_gap(state_districts[state])
+            state_totals[state]["efficiency_gap"] = efficiency_gap
+            print(
+                f"DEBUG {state}: Efficiency gap = {efficiency_gap:.3f} ({efficiency_gap * 100:.1f}%)"
+            )
+
+    return state_totals
+
+
 def render_graph(graph_file, output_file):
     """Render the pickled graph to SVG."""
     # Load the graph
@@ -490,6 +627,13 @@ def render_graph(graph_file, output_file):
         G = pickle.load(f)
 
     print(f"Loaded graph with {G.number_of_nodes()} nodes")
+
+    # Load 2024 vote data
+    print("Loading 2024 vote data...")
+    vote_data = load_2024_vote_data(
+        "PlanScore Production Data (2025) - USH Outcomes (2025).tsv"
+    )
+    print(f"Loaded vote data for {len(vote_data)} states")
 
     # Set up the plot with specified dimensions (962px width)
     # Calculate height to maintain aspect ratio while ensuring 962px width
@@ -529,12 +673,22 @@ def render_graph(graph_file, output_file):
     map_bounds = ax.get_xlim(), ax.get_ylim()
     map_width = map_bounds[0][1] - map_bounds[0][0]
 
-    # Prepare labels for force-directed positioning
+    # Prepare labels for force-directed positioning using 2024 data
     state_labels: list[StateLabel] = []
+    vote_data_with_labels = {}  # Store vote data for rendering
+
     for state_code, data in G.nodes(data=True):
         x = data.get("x")
         y = data.get("y")
-        seats = data.get("seats", 0)
+
+        # Use 2024 data if available, otherwise fall back to graph data
+        if state_code in vote_data:
+            seats = vote_data[state_code]["seats"]
+            efficiency_gap = vote_data[state_code]["efficiency_gap"]
+        else:
+            seats = data.get("seats", 0)
+            efficiency_gap = 0.0
+
         if x is not None and y is not None and seats > 0:
             state_label = StateLabel(
                 state=state_code,
@@ -543,6 +697,9 @@ def render_graph(graph_file, output_file):
                 orig_y=y,
             )
             state_labels.append(state_label)
+            vote_data_with_labels[state_code] = {
+                "efficiency_gap": efficiency_gap,
+            }
 
     print(f"Applying force-directed layout to {len(state_labels)} labels...")
 
@@ -568,10 +725,19 @@ def render_graph(graph_file, output_file):
 
     # Draw labels at their adjusted positions
     for state_label in state_labels:
+        # Get efficiency gap data for this state
+        state_data = vote_data_with_labels.get(
+            state_label.state, {"efficiency_gap": 0.0}
+        )
+
         # Render bounding box, text, and seat dots using StateLabel methods
         state_label.render_bbox(ax, map_width)
         state_label.render_text(ax, map_width)
-        state_label.render_seat_dots(ax, map_width)
+        state_label.render_seat_dots(
+            ax,
+            map_width,
+            state_data["efficiency_gap"],
+        )
 
     # Reset plot limits to original bounds (before labels were added) with rounded bounds
     if all_patches:
