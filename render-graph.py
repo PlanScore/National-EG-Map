@@ -797,12 +797,12 @@ def render_graph(graph_file, output_file):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python render-graph.py <graph.pickle>")
+    if len(sys.argv) != 3:
+        print("Usage: python render-graph.py <graph.pickle> <output.svg>")
         sys.exit(1)
 
     graph_file = sys.argv[1]
-    output_file = "us-states.svg"
+    output_file = sys.argv[2]
 
     render_graph(graph_file, output_file)
 

@@ -639,8 +639,8 @@ def calculate_efficiency_gap(district_votes):
     return (dem_wasted - rep_wasted) / total_votes
 
 
-def load_2024_vote_data(tsv_file):
-    """Load 2024 vote data from TSV file and calculate efficiency gaps."""
+def load_vote_data(tsv_file, year="2024"):
+    """Load vote data from TSV file for specified year and calculate efficiency gaps."""
     state_districts = {}  # state -> list of (votes_dem, votes_rep) tuples
     state_totals = {}  # state -> {votes_dem_est, votes_rep_est, seats}
 
@@ -648,7 +648,7 @@ def load_2024_vote_data(tsv_file):
         reader = csv.DictReader(f, delimiter="\t")
 
         for row in reader:
-            if row["year"] == "2024":
+            if row["year"] == str(year):
                 state = row["stateabrev"]
                 votes_dem_est = (
                     int(row["votes_dem_est"].replace(",", ""))
@@ -831,7 +831,7 @@ def _efficiency_gap_to_color(efficiency_gap: float) -> str:
         return f"#{red:02x}{green:02x}{blue:02x}"
 
 
-def render_graph(graph_file, output_file):
+def render_graph(graph_file, output_file, year="2024"):
     """Render the pickled graph to SVG."""
     # Load the graph
     print(f"Loading graph from {graph_file}...")
@@ -840,10 +840,10 @@ def render_graph(graph_file, output_file):
 
     print(f"Loaded graph with {G.number_of_nodes()} nodes")
 
-    # Load 2024 vote data
-    print("Loading 2024 vote data...")
-    vote_data = load_2024_vote_data(
-        "PlanScore Production Data (2025) - USH Outcomes (2025).tsv"
+    # Load vote data for specified year
+    print(f"Loading {year} vote data...")
+    vote_data = load_vote_data(
+        "PlanScore Production Data (2025) - USH Outcomes (2025).tsv", year
     )
     print(f"Loaded vote data for {len(vote_data)} states")
 
@@ -911,7 +911,7 @@ def render_graph(graph_file, output_file):
     map_bounds = ax.get_xlim(), ax.get_ylim()
     map_width = map_bounds[0][1] - map_bounds[0][0]
 
-    # Prepare labels for force-directed positioning using 2024 data
+    # Prepare labels for force-directed positioning using vote data
     state_labels: list[StateLabel] = []
     vote_data_with_labels = {}  # Store vote data for rendering
 
@@ -919,7 +919,7 @@ def render_graph(graph_file, output_file):
         x = data.get("x")
         y = data.get("y")
 
-        # Use 2024 data if available, otherwise fall back to graph data
+        # Use vote data if available, otherwise fall back to graph data
         if state_code in vote_data:
             seats = vote_data[state_code]["seats"]
             efficiency_gap = vote_data[state_code]["efficiency_gap"]
@@ -1025,14 +1025,15 @@ def render_graph(graph_file, output_file):
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python render-graph.py <graph.pickle>")
+    if len(sys.argv) < 3 or len(sys.argv) > 4:
+        print("Usage: python render-graph3.py <graph.pickle> <output.svg> [year]")
         sys.exit(1)
 
     graph_file = sys.argv[1]
-    output_file = "us-states3.svg"
+    output_file = sys.argv[2]
+    year = sys.argv[3] if len(sys.argv) == 4 else "2024"
 
-    render_graph(graph_file, output_file)
+    render_graph(graph_file, output_file, year)
 
 
 if __name__ == "__main__":
