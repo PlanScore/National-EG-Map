@@ -55,11 +55,11 @@ def polygon_to_svg_path(polygon: shapely.geometry.Polygon, cx: float, cy: float)
     # Start with M (moveto) for first point
     path_parts = []
     x, y = coords[0]
-    path_parts.append(f"M {x:.2f} {y:.2f}")
+    path_parts.append(f"M {x:.1f} {y:.1f}")
 
     # Add L (lineto) for remaining points
     for x, y in coords[1:]:
-        path_parts.append(f"L {x:.2f} {y:.2f}")
+        path_parts.append(f"L {x:.1f} {y:.1f}")
 
     # Close path
     path_parts.append("Z")
@@ -69,9 +69,9 @@ def polygon_to_svg_path(polygon: shapely.geometry.Polygon, cx: float, cy: float)
         interior_coords = list(interior.coords)
         if interior_coords:
             x, y = interior_coords[0]
-            path_parts.append(f"M {x:.2f} {y:.2f}")
+            path_parts.append(f"M {x:.1f} {y:.1f}")
             for x, y in interior_coords[1:]:
-                path_parts.append(f"L {x:.2f} {y:.2f}")
+                path_parts.append(f"L {x:.1f} {y:.1f}")
             path_parts.append("Z")
 
     return " ".join(path_parts)
@@ -96,6 +96,19 @@ def geometry_to_svg_paths(geometry, cx: float, cy: float) -> list[str]:
 
 def render_graph(graph_file: str, output_file: str):
     """Render the pickled graph to SVG with transformable groups."""
+    # Define offshore box positions for tiny northeastern states
+    # Format: state_code -> (x, y, width, height)
+    offshore_boxes = {
+        "VT": (637.9, 97.1, 47.8, 29.0),
+        "NH": (637.9, 127.8, 47.8, 29.0),
+        "MA": (637.9, 158.5, 47.8, 29.0),
+        "RI": (637.9, 189.2, 47.8, 29.0),
+        "CT": (637.9, 219.9, 47.8, 29.0),
+        "NJ": (637.9, 250.6, 47.8, 29.0),
+        "DE": (637.9, 281.3, 47.8, 29.0),
+        "MD": (637.9, 312.1, 47.8, 29.0),
+    }
+
     # Load the graph
     print(f"Loading graph from {graph_file}...")
     with open(graph_file, "rb") as f:
@@ -175,8 +188,8 @@ def render_graph(graph_file: str, output_file: str):
     scale_y = 400 / height
     scale = min(scale_x, scale_y)
 
-    # Calculate offsets to center the map
-    offset_x = (720 - width * scale) / 2
+    # Calculate offsets to center the map (shifted 30px left)
+    offset_x = (720 - width * scale) / 2 - 30
     offset_y = (400 - height * scale) / 2
 
     def transform_coord(x: float, y: float) -> tuple[float, float]:
@@ -188,6 +201,34 @@ def render_graph(graph_file: str, output_file: str):
 
     # Create a group for all state polygons
     states_group = xml.etree.ElementTree.SubElement(svg, "g", {"class": "states"})
+
+    # Create a group for offshore boxes (for tiny northeastern states)
+    boxes_group = xml.etree.ElementTree.SubElement(
+        svg, "g", {"class": "offshore-boxes"}
+    )
+
+    # Render offshore boxes
+    for state_code, (box_x, box_y, box_width, box_height) in offshore_boxes.items():
+        # Create rectangle path for the box
+        box_path = (
+            f"M {box_x:.1f} {box_y:.1f} "
+            f"L {box_x + box_width:.1f} {box_y:.1f} "
+            f"L {box_x + box_width:.1f} {box_y + box_height:.1f} "
+            f"L {box_x:.1f} {box_y + box_height:.1f} Z"
+        )
+
+        xml.etree.ElementTree.SubElement(
+            boxes_group,
+            "path",
+            {
+                "d": box_path,
+                "fill": "#ffffff",
+                "stroke": "#333333",
+                "stroke-width": "1.0",
+                "class": f"offshore-box offshore-box-{state_code}",
+                "data-state": state_code,
+            },
+        )
 
     # Create a group for all labels (will be added after states)
     labels_group = xml.etree.ElementTree.SubElement(svg, "g", {"class": "labels"})
@@ -209,7 +250,7 @@ def render_graph(graph_file: str, output_file: str):
             {
                 "class": f"state state-{state_code}",
                 "data-state": state_code,
-                "transform": f"translate({svg_cx:.2f},{svg_cy:.2f})",
+                "transform": f"translate({svg_cx:.1f},{svg_cy:.1f})",
             },
         )
 
@@ -239,9 +280,9 @@ def render_graph(graph_file: str, output_file: str):
                 rel_y = svg_y - svg_cy
 
                 if i == 0:
-                    path_parts.append(f"M {rel_x:.2f} {rel_y:.2f}")
+                    path_parts.append(f"M {rel_x:.1f} {rel_y:.1f}")
                 else:
-                    path_parts.append(f"L {rel_x:.2f} {rel_y:.2f}")
+                    path_parts.append(f"L {rel_x:.1f} {rel_y:.1f}")
 
             path_parts.append("Z")
 
@@ -255,9 +296,9 @@ def render_graph(graph_file: str, output_file: str):
                         rel_y = svg_y - svg_cy
 
                         if i == 0:
-                            path_parts.append(f"M {rel_x:.2f} {rel_y:.2f}")
+                            path_parts.append(f"M {rel_x:.1f} {rel_y:.1f}")
                         else:
-                            path_parts.append(f"L {rel_x:.2f} {rel_y:.2f}")
+                            path_parts.append(f"L {rel_x:.1f} {rel_y:.1f}")
                     path_parts.append("Z")
 
             path_data = " ".join(path_parts)
@@ -275,14 +316,20 @@ def render_graph(graph_file: str, output_file: str):
             )
 
         # Add label (outside the group so it doesn't scale)
-        label_svg_x, label_svg_y = transform_coord(label_x, label_y)
+        # For offshore states, place label in the offshore box
+        if state_code in offshore_boxes:
+            box_x, box_y, box_width, box_height = offshore_boxes[state_code]
+            label_svg_x = box_x + box_width / 2
+            label_svg_y = box_y + box_height / 2
+        else:
+            label_svg_x, label_svg_y = transform_coord(label_x, label_y)
 
         text = xml.etree.ElementTree.SubElement(
             labels_group,
             "text",
             {
-                "x": f"{label_svg_x:.2f}",
-                "y": f"{label_svg_y:.2f}",
+                "x": f"{label_svg_x:.1f}",
+                "y": f"{label_svg_y:.1f}",
                 "text-anchor": "middle",
                 "dominant-baseline": "middle",
                 "class": f"label label-{state_code}",
