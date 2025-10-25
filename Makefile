@@ -10,6 +10,9 @@ us-states2.svg: us-states.pickle render-graph2.py
 us-states3.svg: us-states.pickle render-graph3.py
 	python render-graph3.py us-states.pickle us-states3.svg 2024
 
+us-states4.svg: us-states.pickle render-graph4.py
+	python render-graph4.py us-states.pickle us-states4.svg
+
 us-states3-2022.svg: us-states.pickle render-graph3.py
 	python render-graph3.py us-states.pickle us-states3-2022.svg 2022
 

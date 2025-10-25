@@ -125,9 +125,31 @@ def render_graph(graph_file: str, output_file: str):
             "width": "720",
             "height": "400",
             "viewBox": "0 0 720 400",
-            "style": 'font-family:"Lucida Grande", "Lucida Sans Unicode", Arial, Helvetica, sans-serif;font-size:12px;',
         },
     )
+
+    # Add styles
+    styles = xml.etree.ElementTree.SubElement(svg, "style")
+    styles.text = """
+        svg {
+            font-family: "Lucida Grande", "Lucida Sans Unicode", Arial, Helvetica, sans-serif;
+            font-size: 12px;
+        }
+        .state-shape {
+            stroke: #555;
+            stroke-width: 1.0;
+        }
+        .offshore-box {
+            stroke: #555;
+            stroke-width: 1.0;
+        }
+        .state-label {
+            font-size: 9px;
+            font-weight: bold;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+    """
 
     # Add description
     desc = xml.etree.ElementTree.SubElement(svg, "desc")
@@ -242,16 +264,18 @@ def render_graph(graph_file: str, output_file: str):
             "path",
             {
                 "d": box_path,
-                "fill": "#ffffff",
-                "stroke": "#333333",
-                "stroke-width": "1.0",
-                "class": f"offshore-box offshore-box-{state_code}",
-                "data-state": state_code,
+                "style": "fill:#eee;",
+                "class": "offshore-box",
+                "id": f"offshore-box-{state_code}",
             },
         )
 
     # Create a group for all labels (will be added after states)
-    labels_group = xml.etree.ElementTree.SubElement(svg, "g", {"class": "labels"})
+    labels_group = xml.etree.ElementTree.SubElement(
+        svg,
+        "g",
+        {"class": "labels"},
+    )
 
     # Process each state
     for state_code, data in sorted(state_data.items()):
@@ -268,9 +292,10 @@ def render_graph(graph_file: str, output_file: str):
             states_group,
             "g",
             {
-                "class": f"state state-{state_code}",
-                "data-state": state_code,
-                "transform": f"translate({svg_cx:.1f},{svg_cy:.1f})",
+                "class": "state-shape",
+                "id": f"state-shape-{state_code}",
+                "transform": f"translate({svg_cx:.1f},{svg_cy:.1f}) scale(1,1)",
+                "style": "fill:#eee;",
             },
         )
 
@@ -327,12 +352,7 @@ def render_graph(graph_file: str, output_file: str):
             xml.etree.ElementTree.SubElement(
                 state_group,
                 "path",
-                {
-                    "d": path_data,
-                    "fill": "#ffffff",
-                    "stroke": "#333333",
-                    "stroke-width": "1.0",
-                },
+                {"d": path_data},
             )
 
         # Add label (outside the group so it doesn't scale)
@@ -350,11 +370,9 @@ def render_graph(graph_file: str, output_file: str):
             {
                 "x": f"{label_svg_x:.1f}",
                 "y": f"{label_svg_y:.1f}",
-                "text-anchor": "middle",
-                "dominant-baseline": "middle",
-                "class": f"label label-{state_code}",
-                "data-state": state_code,
-                "style": "font-size:9px;font-weight:bold;fill:black;",
+                "class": f"state-label",
+                "id": f"state-label-{state_code}",
+                "style": "fill:black;",
             },
         )
         text.text = state_code
