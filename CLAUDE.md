@@ -16,3 +16,9 @@ This is a Python project that uses a virtual environment located in `.venv`.
 - Run tests and linting before commits using `ruff` for linting and formatting
 - Follow Python best practices and PEP 8 style guidelines
 - Preview SVG output by opening in Safari with `open -a Safari us-states.svg`
+
+## Coding Style
+- Use full module imports: `import module` instead of `from module import member`
+- Do not use import aliases (e.g., avoid `import xml.etree.ElementTree as ET`)
+- Use built-in types for type hints: `list`, `tuple`, `dict` instead of `typing.List`, `typing.Tuple`, `typing.Dict`
+- Use `from __future__ import annotations` to enable modern type hint syntax (e.g., `str | None` instead of `Optional[str]`)

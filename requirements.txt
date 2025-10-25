@@ -1,5 +1,5 @@
-GDAL==3.11.1
-networkx==3.5
-ruff==0.14.1
-matplotlib==3.10.7
-shapely==2.1.2
+GDAL
+networkx
+ruff
+matplotlib
+shapely
