@@ -161,18 +161,22 @@ def render_graph(graph_file: str, output_file: str):
                 all_y.extend([bounds[1], bounds[3]])
 
                 # Apply negative buffer to geometry for centroid calculation
-                buffered_geom = geom.buffer(-10000)
+                buffered_geom = geom.buffer(-40000)
 
                 # Find largest polygon and its centroid from buffered geometry
-                largest = find_largest_polygon(buffered_geom) if not buffered_geom.is_empty else None
+                largest = (
+                    find_largest_polygon(buffered_geom)
+                    if not buffered_geom.is_empty
+                    else None
+                )
                 if largest:
                     cx, cy = calculate_centroid(largest)
                     state_data[state_code] = {
                         "geometry": geom,
                         "buffered_geometry": buffered_geom,
                         "centroid": (cx, cy),
-                        "label_x": data.get("x", cx),
-                        "label_y": data.get("y", cy),
+                        "label_x": cx,
+                        "label_y": cy,
                     }
                 else:
                     # Fallback to original geometry if buffer is empty
@@ -183,8 +187,8 @@ def render_graph(graph_file: str, output_file: str):
                             "geometry": geom,
                             "buffered_geometry": None,
                             "centroid": (cx, cy),
-                            "label_x": data.get("x", cx),
-                            "label_y": data.get("y", cy),
+                            "label_x": cx,
+                            "label_y": cy,
                         }
             except Exception as e:
                 print(f"Error processing {state_code}: {e}")
@@ -217,11 +221,6 @@ def render_graph(graph_file: str, output_file: str):
 
     # Create a group for all state polygons
     states_group = xml.etree.ElementTree.SubElement(svg, "g", {"class": "states"})
-
-    # Create a group for buffered geometries (for visualization)
-    buffered_group = xml.etree.ElementTree.SubElement(
-        svg, "g", {"class": "buffered-states", "opacity": "0.5"}
-    )
 
     # Create a group for offshore boxes (for tiny northeastern states)
     boxes_group = xml.etree.ElementTree.SubElement(
@@ -359,77 +358,6 @@ def render_graph(graph_file: str, output_file: str):
             },
         )
         text.text = state_code
-
-    # Render buffered geometries for visualization
-    for state_code, data in sorted(state_data.items()):
-        buffered_geom = data.get("buffered_geometry")
-        if buffered_geom is None or buffered_geom.is_empty:
-            continue
-
-        # Get polygons from buffered geometry
-        if buffered_geom.geom_type == "Polygon":
-            polygons = [buffered_geom]
-        elif buffered_geom.geom_type == "MultiPolygon":
-            polygons = list(buffered_geom.geoms)
-        else:
-            continue
-
-        for poly in polygons:
-            coords = list(poly.exterior.coords)
-            if not coords:
-                continue
-
-            # Build path data
-            path_parts = []
-            for i, (x, y) in enumerate(coords):
-                svg_x, svg_y = transform_coord(x, y)
-                if i == 0:
-                    path_parts.append(f"M {svg_x:.1f} {svg_y:.1f}")
-                else:
-                    path_parts.append(f"L {svg_x:.1f} {svg_y:.1f}")
-            path_parts.append("Z")
-
-            # Handle holes
-            for interior in poly.interiors:
-                interior_coords = list(interior.coords)
-                if interior_coords:
-                    for i, (x, y) in enumerate(interior_coords):
-                        svg_x, svg_y = transform_coord(x, y)
-                        if i == 0:
-                            path_parts.append(f"M {svg_x:.1f} {svg_y:.1f}")
-                        else:
-                            path_parts.append(f"L {svg_x:.1f} {svg_y:.1f}")
-                    path_parts.append("Z")
-
-            path_data = " ".join(path_parts)
-
-            # Create path element in buffered group
-            xml.etree.ElementTree.SubElement(
-                buffered_group,
-                "path",
-                {
-                    "d": path_data,
-                    "fill": "none",
-                    "stroke": "#ff0000",
-                    "stroke-width": "1.0",
-                    "class": f"buffered buffered-{state_code}",
-                },
-            )
-
-        # Add a marker for the centroid
-        cx, cy = data["centroid"]
-        svg_cx, svg_cy = transform_coord(cx, cy)
-        xml.etree.ElementTree.SubElement(
-            buffered_group,
-            "circle",
-            {
-                "cx": f"{svg_cx:.1f}",
-                "cy": f"{svg_cy:.1f}",
-                "r": "2",
-                "fill": "#ff0000",
-                "class": f"centroid centroid-{state_code}",
-            },
-        )
 
     # Write SVG to file
     print(f"Writing SVG to {output_file}...")
