@@ -138,16 +138,22 @@ def render_graph(graph_file: str, output_file: str):
         .state-shape {
             stroke: #555;
             stroke-width: 1.0;
+            transition: fill 0.5s ease-in-out;
         }
         .offshore-box {
             stroke: #555;
             stroke-width: 1.0;
+            transition: fill 0.5s ease-in-out;
         }
         .state-label {
             font-size: 9px;
             font-weight: bold;
             text-anchor: middle;
             dominant-baseline: middle;
+            transition: fill 0.5s ease-in-out;
+            cursor: pointer;
+            user-select: none;
+            pointer-events: none;
         }
     """
 
