@@ -166,7 +166,7 @@ def render_graph(graph_file: str, output_file: str):
         svg,
         "rect",
         {
-            "fill": "#ffffff",
+            "fill": "white",
             "x": "0",
             "y": "0",
             "width": "720",
@@ -270,7 +270,7 @@ def render_graph(graph_file: str, output_file: str):
             "path",
             {
                 "d": box_path,
-                "style": "fill:#eee;",
+                "style": "fill:white;",
                 "class": "offshore-box",
                 "id": f"offshore-box-{state_code}",
             },
@@ -303,7 +303,7 @@ def render_graph(graph_file: str, output_file: str):
             {
                 "class": "state-shape",
                 "id": f"state-shape-{state_code}",
-                "style": f"fill:#eee;transform:translate({svg_cx:.1f}px,{svg_cy:.1f}px);",
+                "style": f"fill:white;transform:translate({svg_cx:.1f}px,{svg_cy:.1f}px);",
                 "data-area": str(state_area),
             },
         )
