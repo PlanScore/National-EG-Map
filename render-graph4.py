@@ -292,6 +292,9 @@ def render_graph(graph_file: str, output_file: str):
         # Transform centroid to SVG coordinates
         svg_cx, svg_cy = transform_coord(cx, cy)
 
+        # Calculate area of the geometry (excluding offshore boxes)
+        state_area = int(geometry.area)
+
         # Create transformable group for this state, centered on its centroid
         # The transform translates to the centroid so scaling happens from there
         state_group = xml.etree.ElementTree.SubElement(
@@ -302,6 +305,7 @@ def render_graph(graph_file: str, output_file: str):
                 "id": f"state-shape-{state_code}",
                 "transform": f"translate({svg_cx:.1f},{svg_cy:.1f}) scale(1,1)",
                 "style": "fill:#eee;",
+                "data-area": str(state_area),
             },
         )
 
@@ -376,7 +380,7 @@ def render_graph(graph_file: str, output_file: str):
             {
                 "x": f"{label_svg_x:.1f}",
                 "y": f"{label_svg_y:.1f}",
-                "class": f"state-label",
+                "class": "state-label",
                 "id": f"state-label-{state_code}",
                 "style": "fill:black;",
             },
