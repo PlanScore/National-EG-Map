@@ -303,8 +303,7 @@ def render_graph(graph_file: str, output_file: str):
             {
                 "class": "state-shape",
                 "id": f"state-shape-{state_code}",
-                "transform": f"translate({svg_cx:.1f},{svg_cy:.1f}) scale(1,1)",
-                "style": "fill:#eee;",
+                "style": f"fill:#eee;transform:translate({svg_cx:.1f}px,{svg_cy:.1f}px);",
                 "data-area": str(state_area),
             },
         )
