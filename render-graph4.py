@@ -366,6 +366,10 @@ def render_graph(graph_file: str, output_file: str):
 
         # Add label (outside the group so it doesn't scale)
         # For offshore states, place label in the offshore box
+        if state_code == "DC":
+            # No label for DC
+            continue
+
         if state_code in offshore_boxes:
             box_x, box_y, box_width, box_height = offshore_boxes[state_code]
             label_svg_x = box_x + box_width / 2
