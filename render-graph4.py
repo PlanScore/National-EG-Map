@@ -155,6 +155,9 @@ def render_graph(graph_file: str, output_file: str):
             user-select: none;
             pointer-events: none;
         }
+        .state-underline {
+            transition: fill 0.5s ease-in-out;
+        }
     """
 
     # Add description
@@ -389,6 +392,19 @@ def render_graph(graph_file: str, output_file: str):
             },
         )
         text.text = state_code
+        xml.etree.ElementTree.SubElement(
+            labels_group,
+            "rect",
+            {
+                "x": f"{label_svg_x - 6:.1f}",
+                "y": f"{label_svg_y + 5:.1f}",
+                "width": "12",
+                "height": "2",
+                "class": "state-underline",
+                "id": f"state-underline-{state_code}",
+                "style": "fill:black;",
+            },
+        )
 
     # Write SVG to file
     print(f"Writing SVG to {output_file}...")
